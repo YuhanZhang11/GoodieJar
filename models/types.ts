@@ -1,0 +1,68 @@
+export interface Task {
+  id: string;
+  name: string;
+  description: string;
+
+  coinReward: number;
+  estimatedDurationMinutes: number | null;
+
+  createdAt: string;
+  archivedAt: string | null;
+}
+
+export interface Reward {
+  id: string;
+  name: string;
+  description: string;
+
+  coinCost: number;
+  estimatedDurationMinutes: number | null;
+
+  createdAt: string;
+  archivedAt: string | null;
+}
+
+export interface DailyLog {
+  id: string;
+  date: string;
+
+  mentalExhaustion: number | null;
+}
+
+export type TransactionType = 'EARN' | 'SPEND';
+
+export interface CoinTransaction {
+  id: string;
+  type: TransactionType;
+
+  amount: number;
+  actualDurationMinutes: number | null;
+
+  // Snapshot of the source name at the time the transaction occurred
+  sourceName: string;
+
+  // Exactly one of these will normally be non-null
+  taskId: string | null;
+  rewardId: string | null;
+  achievementId: string | null;
+
+  dailyLogId: string;
+
+  occurredAt: string;
+}
+
+export interface Achievement {
+  id: string;
+  name: string;
+  description: string;
+
+  coinBonus: number;
+
+  // Achievement already happened when the user adds it
+  achievedAt: string;
+
+  // When this record was added to GoodieJar
+  createdAt: string;
+
+  archivedAt: string | null;
+}
