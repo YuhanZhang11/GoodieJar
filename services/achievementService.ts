@@ -2,6 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { initDatabase } from '@/database/database';
 import type { Achievement } from '@/models/types';
+import { parseTimestamp } from '@/utils/timestamp';
 
 type AchievementRow = {
   id: string;
@@ -61,33 +62,22 @@ function validateCoinBonus(coinBonus: number): number {
   return coinBonus;
 }
 
-function validateTimestamp(timestamp: string, fieldName: string): string {
-  const trimmedTimestamp = timestamp.trim();
-
-  if (trimmedTimestamp.length === 0) {
-    throw new Error(`Achievement ${fieldName} must not be blank.`);
-  }
-
-  if (Number.isNaN(new Date(trimmedTimestamp).getTime())) {
-    throw new Error(`Achievement ${fieldName} must be a valid timestamp string.`);
-  }
-
-  return trimmedTimestamp;
-}
-
 async function getDatabase(): Promise<SQLiteDatabase> {
   return initDatabase();
 }
 
-export async function createAchievement(input: CreateAchievementInput): Promise<Achievement> {
-  const db = await getDatabase();
+export async function createAchievement(
+  input: CreateAchievementInput,
+  database?: SQLiteDatabase
+): Promise<Achievement> {
+  const db = database ?? (await getDatabase());
   const now = new Date().toISOString();
   const achievement: Achievement = {
     id: createId(),
     name: validateName(input.name),
     description: input.description ?? '',
     coinBonus: validateCoinBonus(input.coinBonus),
-    achievedAt: validateTimestamp(input.achievedAt, 'achievedAt'),
+    achievedAt: parseTimestamp(input.achievedAt, 'Achievement achievedAt').timestamp,
     createdAt: now,
     archivedAt: null,
   };
@@ -156,7 +146,7 @@ export async function updateAchievement(
     achievedAt:
       input.achievedAt === undefined
         ? existingAchievement.achievedAt
-        : validateTimestamp(input.achievedAt, 'achievedAt'),
+        : parseTimestamp(input.achievedAt, 'Achievement achievedAt').timestamp,
   };
 
   const db = await getDatabase();

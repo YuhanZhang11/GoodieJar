@@ -3,6 +3,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { initDatabase } from '@/database/database';
 import type { CoinTransaction, TransactionType } from '@/models/types';
 import { getDailyLogByDate } from '@/services/dailyLogService';
+import { parseTimestamp } from '@/utils/timestamp';
 
 type CoinTransactionRow = {
   id: string;
@@ -104,16 +105,6 @@ function validateNonBlank(value: string, fieldName: string): string {
   return trimmedValue;
 }
 
-function validateTimestamp(timestamp: string): string {
-  validateNonBlank(timestamp, 'occurredAt');
-
-  if (Number.isNaN(new Date(timestamp).getTime())) {
-    throw new Error('Transaction occurredAt must be a valid timestamp string.');
-  }
-
-  return timestamp;
-}
-
 function normalizeSourceId(sourceId: string | null | undefined, fieldName: string): string | null {
   if (sourceId == null) {
     return null;
@@ -157,7 +148,7 @@ export async function createTransaction(
     rewardId: sources.rewardId,
     achievementId: sources.achievementId,
     dailyLogId: validateNonBlank(input.dailyLogId, 'dailyLogId'),
-    occurredAt: validateTimestamp(input.occurredAt),
+    occurredAt: parseTimestamp(input.occurredAt, 'Transaction occurredAt').timestamp,
   };
 
   await db.runAsync(

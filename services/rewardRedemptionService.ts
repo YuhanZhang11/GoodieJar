@@ -8,6 +8,7 @@ import {
 } from '@/services/coinTransactionService';
 import { getOrCreateDailyLog } from '@/services/dailyLogService';
 import { getRewardById } from '@/services/rewardService';
+import { parseTimestamp } from '@/utils/timestamp';
 
 export type RedeemRewardInput = {
   rewardId: string;
@@ -32,14 +33,9 @@ function validateRewardId(rewardId: string): string {
 }
 
 function resolveOccurredAt(occurredAt: string | undefined): { timestamp: string; date: Date } {
-  const timestamp = occurredAt === undefined ? new Date().toISOString() : occurredAt.trim();
-  const date = new Date(timestamp);
+  const timestamp = occurredAt === undefined ? new Date().toISOString() : occurredAt;
 
-  if (timestamp.length === 0 || Number.isNaN(date.getTime())) {
-    throw new Error('Reward redemption occurredAt must be a valid timestamp string.');
-  }
-
-  return { timestamp, date };
+  return parseTimestamp(timestamp, 'Reward redemption occurredAt');
 }
 
 function getLocalCalendarDate(date: Date): string {

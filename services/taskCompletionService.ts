@@ -3,6 +3,7 @@ import type { CoinTransaction, DailyLog, Task } from '@/models/types';
 import { createTransaction } from '@/services/coinTransactionService';
 import { getOrCreateDailyLog } from '@/services/dailyLogService';
 import { getTaskById } from '@/services/taskService';
+import { parseTimestamp } from '@/utils/timestamp';
 
 export type CompleteTaskInput = {
   taskId: string;
@@ -27,14 +28,9 @@ function validateTaskId(taskId: string): string {
 }
 
 function resolveOccurredAt(occurredAt: string | undefined): { timestamp: string; date: Date } {
-  const timestamp = occurredAt === undefined ? new Date().toISOString() : occurredAt.trim();
-  const date = new Date(timestamp);
+  const timestamp = occurredAt === undefined ? new Date().toISOString() : occurredAt;
 
-  if (timestamp.length === 0 || Number.isNaN(date.getTime())) {
-    throw new Error('Task completion occurredAt must be a valid timestamp string.');
-  }
-
-  return { timestamp, date };
+  return parseTimestamp(timestamp, 'Task completion occurredAt');
 }
 
 function getLocalCalendarDate(date: Date): string {
