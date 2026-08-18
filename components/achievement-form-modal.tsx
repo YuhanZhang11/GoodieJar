@@ -128,13 +128,18 @@ export function AchievementFormModal({
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}>
             <View style={styles.modalHeader}>
-              <View>
+              <View style={styles.headerText}>
                 <Text style={[styles.eyebrow, { color: colors.mutedText }]}>Achievements</Text>
-                <Text style={[styles.title, { color: colors.text }]}>
+                <Text
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.82}
+                  numberOfLines={1}
+                  style={[styles.title, { color: colors.text }]}>
                   {isEditMode ? 'Edit Achievement' : 'Add Achievement'}
                 </Text>
               </View>
               <Pressable
+                accessibilityLabel="Close achievement form"
                 accessibilityRole="button"
                 disabled={isSubmitting}
                 hitSlop={10}
@@ -212,7 +217,9 @@ export function AchievementFormModal({
             </View>
 
             {errorMessage ? (
-              <Text accessibilityRole="alert" style={styles.errorText}>
+              <Text
+                accessibilityRole="alert"
+                style={[styles.errorText, { color: colors.danger }]}>
                 {errorMessage}
               </Text>
             ) : null}
@@ -271,7 +278,7 @@ const styles = StyleSheet.create({
   },
   content: {
     alignSelf: 'center',
-    gap: 24,
+    gap: 22,
     maxWidth: 600,
     paddingBottom: 30,
     paddingHorizontal: 22,
@@ -282,6 +289,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
+  },
+  headerText: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 12,
   },
   eyebrow: {
     fontSize: 13,
@@ -301,7 +313,7 @@ const styles = StyleSheet.create({
     width: 42,
   },
   fields: {
-    gap: 18,
+    gap: 16,
   },
   field: {
     gap: 7,
@@ -326,7 +338,6 @@ const styles = StyleSheet.create({
     minHeight: 96,
   },
   errorText: {
-    color: '#B33A3A',
     fontSize: 14,
     lineHeight: 20,
   },

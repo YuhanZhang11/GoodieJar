@@ -393,9 +393,9 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: Fonts.rounded,
-    fontSize: 30,
+    fontSize: 29,
     fontWeight: '700',
-    lineHeight: 38,
+    lineHeight: 36,
   },
   titleRow: {
     alignItems: 'center',
@@ -406,8 +406,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 8,
     justifyContent: 'center',
-    minHeight: 38,
-    paddingHorizontal: 13,
+    minHeight: 40,
+    paddingHorizontal: 14,
   },
   todayButtonText: {
     fontSize: 14,
@@ -419,14 +419,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     justifyContent: 'space-between',
-    marginTop: 24,
+    marginTop: 20,
   },
   monthButton: {
     alignItems: 'center',
     borderRadius: 8,
-    height: 40,
+    height: 42,
     justifyContent: 'center',
-    width: 40,
+    width: 42,
   },
   periodControls: {
     alignItems: 'center',
@@ -440,8 +440,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 8,
     flexDirection: 'row',
-    minHeight: 38,
-    paddingHorizontal: 10,
+    minHeight: 40,
+    paddingHorizontal: 11,
   },
   periodText: {
     fontFamily: Fonts.rounded,
@@ -452,7 +452,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   calendar: {
-    marginTop: 24,
+    marginTop: 20,
   },
   weekRow: {
     flexDirection: 'row',
@@ -487,10 +487,10 @@ const styles = StyleSheet.create({
   },
   activityDot: {
     borderRadius: 3,
-    bottom: 6,
-    height: 5,
+    bottom: 5,
+    height: 6,
     position: 'absolute',
-    width: 5,
+    width: 6,
   },
   statusState: {
     alignItems: 'center',
@@ -515,7 +515,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 5,
     marginTop: 3,
-    minHeight: 38,
+    minHeight: 40,
     paddingHorizontal: 13,
   },
   retryText: {

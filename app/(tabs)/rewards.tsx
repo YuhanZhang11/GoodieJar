@@ -249,6 +249,7 @@ export default function RewardsScreen() {
           <View style={[styles.sectionHeader, { backgroundColor: colors.surfaceMuted }]}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Rewards</Text>
             <Pressable
+              accessibilityLabel="Add reward"
               accessibilityRole="button"
               onPress={openRewardFormForAdd}
               style={({ pressed }) => [
@@ -298,9 +299,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 4,
-    marginTop: 12,
-    minHeight: 46,
+    marginBottom: 6,
+    marginTop: 10,
+    minHeight: 48,
     paddingHorizontal: 12,
     paddingVertical: 5,
   },
@@ -315,8 +316,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     flexDirection: 'row',
     gap: 3,
-    minHeight: 34,
-    paddingHorizontal: 10,
+    minHeight: 40,
+    paddingHorizontal: 11,
   },
   addButtonText: {
     fontSize: 14,
@@ -348,7 +349,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 5,
     marginTop: 4,
-    minHeight: 38,
+    minHeight: 40,
     paddingHorizontal: 13,
   },
   retryText: {

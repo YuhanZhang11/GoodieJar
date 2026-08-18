@@ -75,13 +75,20 @@ export function JarHeader({ refreshToken = 0 }: JarHeaderProps) {
           ]}>
           <MaterialIcons
             name={hasNegativeBalance ? 'money-off' : 'monetization-on'}
-            size={24}
-            color={colors.coin}
+            size={22}
+            color={hasNegativeBalance ? colors.danger : colors.coin}
           />
           {balanceState.status === 'loading' ? (
             <ActivityIndicator color={colors.primary} size="small" />
           ) : (
-            <Text style={[styles.balanceText, { color: colors.text }]}>
+            <Text
+              adjustsFontSizeToFit
+              minimumFontScale={0.78}
+              numberOfLines={1}
+              style={[
+                styles.balanceText,
+                { color: hasNegativeBalance ? colors.danger : colors.text },
+              ]}>
               {balanceState.status === 'loaded' ? balanceState.balance.toLocaleString() : '--'}
             </Text>
           )}
@@ -100,16 +107,18 @@ export function JarHeader({ refreshToken = 0 }: JarHeaderProps) {
 const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
   titleRow: {
     alignItems: 'center',
     flexDirection: 'row',
+    gap: 12,
     justifyContent: 'space-between',
     maxWidth: 560,
     width: '100%',
   },
   brand: {
+    flexShrink: 1,
     fontFamily: Fonts.rounded,
     fontSize: 29,
     fontWeight: '700',
@@ -121,11 +130,13 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     gap: 6,
-    minHeight: 40,
-    minWidth: 76,
+    flexShrink: 1,
+    minHeight: 42,
+    minWidth: 78,
     paddingHorizontal: 12,
   },
   balanceText: {
+    flexShrink: 1,
     fontSize: 17,
     fontWeight: '700',
     lineHeight: 22,

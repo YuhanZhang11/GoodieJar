@@ -70,9 +70,9 @@ const styles = StyleSheet.create({
   headerFrame: {
     alignSelf: 'center',
     maxWidth: 640,
-    paddingBottom: 16,
+    paddingBottom: 12,
     paddingHorizontal: 22,
-    paddingTop: 10,
+    paddingTop: 8,
     width: '100%',
   },
   contentBoundary: {

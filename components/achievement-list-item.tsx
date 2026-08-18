@@ -59,7 +59,7 @@ export function AchievementListItem({
           </Text>
           <View style={[styles.bonus, { backgroundColor: colors.surfaceMuted }]}>
             <MaterialIcons name="monetization-on" size={17} color={colors.coin} />
-            <Text style={[styles.bonusText, { color: colors.text }]}>+{achievement.coinBonus}</Text>
+            <Text style={[styles.bonusText, { color: colors.coinDeep }]}>+{achievement.coinBonus}</Text>
           </View>
         </View>
         <Text
@@ -76,8 +76,8 @@ export function AchievementListItem({
 const styles = StyleSheet.create({
   container: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 5,
-    paddingVertical: 10,
+    gap: 6,
+    paddingVertical: 11,
   },
   primaryRow: {
     alignItems: 'center',
@@ -97,8 +97,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexShrink: 0,
     gap: 2,
-    minHeight: 28,
-    paddingHorizontal: 7,
+    minHeight: 30,
+    paddingHorizontal: 8,
   },
   bonusText: {
     fontSize: 13,
@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
   },
   metadata: {
     fontSize: 12,
-    lineHeight: 17,
+    lineHeight: 18,
     paddingRight: 4,
   },
 });

@@ -102,6 +102,7 @@ export function CalendarPeriodSelector({
                     <Pressable
                       accessibilityLabel={`Select ${monthLabel}`}
                       accessibilityRole="button"
+                      accessibilityState={{ selected: isSelected }}
                       onPress={() => onSelectMonth(monthIndex)}
                       style={({ pressed }) => [
                         styles.option,
@@ -130,6 +131,7 @@ export function CalendarPeriodSelector({
                 <Pressable
                   accessibilityLabel="Previous year range"
                   accessibilityRole="button"
+                  accessibilityState={{ disabled: !canShowPreviousYears }}
                   disabled={!canShowPreviousYears}
                   onPress={() => setYearPageStart((currentStart) => currentStart - YEAR_PAGE_SIZE)}
                   style={({ pressed }) => [
@@ -147,6 +149,7 @@ export function CalendarPeriodSelector({
                 <Pressable
                   accessibilityLabel="Next year range"
                   accessibilityRole="button"
+                  accessibilityState={{ disabled: !canShowNextYears }}
                   disabled={!canShowNextYears}
                   onPress={() => setYearPageStart((currentStart) => currentStart + YEAR_PAGE_SIZE)}
                   style={({ pressed }) => [
@@ -169,6 +172,7 @@ export function CalendarPeriodSelector({
                       <Pressable
                         accessibilityLabel={`Select ${year}`}
                         accessibilityRole="button"
+                        accessibilityState={{ selected: isSelected }}
                         onPress={() => onSelectYear(year)}
                         style={({ pressed }) => [
                           styles.option,
@@ -238,9 +242,9 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     alignItems: 'center',
-    height: 42,
+    height: 44,
     justifyContent: 'center',
-    width: 42,
+    width: 44,
   },
   rangeHeader: {
     alignItems: 'center',
@@ -251,9 +255,9 @@ const styles = StyleSheet.create({
   rangeButton: {
     alignItems: 'center',
     borderRadius: 8,
-    height: 38,
+    height: 42,
     justifyContent: 'center',
-    width: 38,
+    width: 42,
   },
   rangeLabel: {
     fontSize: 16,

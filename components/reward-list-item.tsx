@@ -55,7 +55,7 @@ export function RewardListItem({
 
           <View style={[styles.cost, { backgroundColor: colors.surfaceMuted }]}>
             <MaterialIcons name="monetization-on" size={17} color={colors.coin} />
-            <Text style={[styles.costText, { color: colors.text }]}>-{reward.coinCost}</Text>
+            <Text style={[styles.costText, { color: colors.coinDeep }]}>-{reward.coinCost}</Text>
           </View>
 
           <Pressable
@@ -109,8 +109,8 @@ export function RewardListItem({
 const styles = StyleSheet.create({
   container: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 5,
-    paddingVertical: 10,
+    gap: 6,
+    paddingVertical: 11,
   },
   primaryRow: {
     alignItems: 'center',
@@ -130,8 +130,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexShrink: 0,
     gap: 2,
-    minHeight: 28,
-    paddingHorizontal: 7,
+    minHeight: 30,
+    paddingHorizontal: 8,
   },
   costText: {
     fontSize: 13,
@@ -145,9 +145,9 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     gap: 3,
     justifyContent: 'center',
-    minHeight: 34,
+    minHeight: 40,
     paddingHorizontal: 8,
-    width: 96,
+    width: 98,
   },
   redeemText: {
     fontSize: 13,
@@ -156,7 +156,7 @@ const styles = StyleSheet.create({
   },
   metadata: {
     fontSize: 12,
-    lineHeight: 17,
+    lineHeight: 18,
     paddingRight: 4,
   },
 });

@@ -28,7 +28,6 @@ export function SwipeableRow({
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const swipeableRef = useRef<SwipeableMethods>(null);
-  const destructiveColor = colorScheme === 'dark' ? '#B95759' : '#C84B4F';
 
   useEffect(() => {
     if (disabled) {
@@ -80,10 +79,10 @@ export function SwipeableRow({
             onPress={() => closeAndRun(onDelete)}
             style={({ pressed }) => [
               styles.action,
-              { backgroundColor: destructiveColor, opacity: pressed ? 0.76 : 1 },
+              { backgroundColor: colors.danger, opacity: pressed ? 0.76 : 1 },
             ]}>
-            <MaterialIcons name="delete-outline" size={19} color="#FFFFFF" />
-            <Text style={styles.deleteText}>Delete</Text>
+            <MaterialIcons name="delete-outline" size={20} color={colors.dangerContrast} />
+            <Text style={[styles.deleteText, { color: colors.dangerContrast }]}>Delete</Text>
           </Pressable>
         </View>
       )}
@@ -96,13 +95,13 @@ export function SwipeableRow({
 const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
-    width: 144,
+    width: 148,
   },
   action: {
     alignItems: 'center',
-    gap: 3,
+    gap: 4,
     justifyContent: 'center',
-    width: 72,
+    width: 74,
   },
   editText: {
     fontSize: 12,
@@ -110,7 +109,6 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   deleteText: {
-    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',
     lineHeight: 16,

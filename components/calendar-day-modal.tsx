@@ -104,10 +104,29 @@ export function CalendarDayModal({ date, events, onRequestClose }: CalendarDayMo
             { backgroundColor: colors.surface, borderColor: colors.border },
           ]}>
           <View style={[styles.netSection, { borderBottomColor: colors.border }]}>
-            <Text style={[styles.summaryLabel, { color: colors.mutedText }]}>Net gain</Text>
-            <Text style={[styles.netAmount, { color: colors.text }]}>
-              {formatNetGain(summary.netGain)}
-            </Text>
+            <View style={styles.netMetric}>
+              <Text style={[styles.summaryLabel, { color: colors.mutedText }]}>Net gain</Text>
+              <Text
+                style={[
+                  styles.netAmount,
+                  {
+                    color:
+                      summary.netGain < 0
+                        ? colors.danger
+                        : summary.netGain > 0
+                          ? colors.primary
+                          : colors.text,
+                  },
+                ]}>
+                {formatNetGain(summary.netGain)}
+              </Text>
+            </View>
+            <View style={styles.achievementMetric}>
+              <Text style={[styles.metricLabel, { color: colors.mutedText }]}>Achievement</Text>
+              <Text style={[styles.metricAmount, { color: colors.coinDeep }]}>
+                {formatPositiveAmount(summary.achievementCoins)}
+              </Text>
+            </View>
           </View>
           <View style={styles.metricsRow}>
             <View style={styles.metric}>
@@ -116,16 +135,15 @@ export function CalendarDayModal({ date, events, onRequestClose }: CalendarDayMo
                 {formatPositiveAmount(summary.totalEarned)}
               </Text>
             </View>
-            <View style={styles.metric}>
+            <View
+              style={[
+                styles.metric,
+                styles.dividedMetric,
+                { borderLeftColor: colors.border },
+              ]}>
               <Text style={[styles.metricLabel, { color: colors.mutedText }]}>Spent</Text>
               <Text style={[styles.metricAmount, { color: colors.coinDeep }]}>
                 {formatNegativeAmount(summary.totalSpent)}
-              </Text>
-            </View>
-            <View style={styles.metric}>
-              <Text style={[styles.metricLabel, { color: colors.mutedText }]}>Achievement</Text>
-              <Text style={[styles.metricAmount, { color: colors.coinDeep }]}>
-                {formatPositiveAmount(summary.achievementCoins)}
               </Text>
             </View>
           </View>
@@ -230,9 +248,9 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     alignItems: 'center',
-    height: 42,
+    height: 44,
     justifyContent: 'center',
-    width: 42,
+    width: 44,
   },
   summaryCard: {
     alignSelf: 'center',
@@ -244,8 +262,19 @@ const styles = StyleSheet.create({
     width: '90%',
   },
   netSection: {
+    alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: 16,
     paddingVertical: 13,
+  },
+  netMetric: {
+    flex: 1,
+    minWidth: 0,
+  },
+  achievementMetric: {
+    alignItems: 'flex-end',
+    flexShrink: 0,
   },
   summaryLabel: {
     fontSize: 12,
@@ -265,6 +294,10 @@ const styles = StyleSheet.create({
   metric: {
     flex: 1,
     minWidth: 0,
+  },
+  dividedMetric: {
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    paddingLeft: 16,
   },
   metricLabel: {
     fontSize: 11,
@@ -329,14 +362,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     gap: 11,
-    paddingVertical: 13,
+    paddingVertical: 11,
   },
   iconFrame: {
     alignItems: 'center',
     borderRadius: 8,
-    height: 38,
+    height: 36,
     justifyContent: 'center',
-    width: 38,
+    width: 36,
   },
   eventContent: {
     flex: 1,
