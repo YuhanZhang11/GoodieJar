@@ -114,8 +114,11 @@ export async function createReward(input: CreateRewardInput): Promise<Reward> {
   return reward;
 }
 
-export async function getRewardById(id: string): Promise<Reward | null> {
-  const db = await getDatabase();
+export async function getRewardById(
+  id: string,
+  database?: SQLiteDatabase
+): Promise<Reward | null> {
+  const db = database ?? (await getDatabase());
   const row = await db.getFirstAsync<RewardRow>('SELECT * FROM rewards WHERE id = ?', [id]);
 
   return row ? mapRewardRow(row) : null;

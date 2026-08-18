@@ -221,8 +221,8 @@ export async function getTransactionsByDate(date: string): Promise<CoinTransacti
   return getTransactionsByDailyLogId(dailyLog.id);
 }
 
-export async function getCurrentBalance(): Promise<number> {
-  const db = await getDatabase();
+export async function getCurrentBalance(database?: SQLiteDatabase): Promise<number> {
+  const db = database ?? (await getDatabase());
   const row = await db.getFirstAsync<BalanceRow>(
     `SELECT COALESCE(
       SUM(CASE
