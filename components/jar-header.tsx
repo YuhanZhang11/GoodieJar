@@ -1,6 +1,6 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { JarVisual } from '@/components/jar-visual';
@@ -21,19 +21,23 @@ export function JarHeader({ refreshToken = 0 }: JarHeaderProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const [balanceState, setBalanceState] = useState<BalanceState>({ status: 'loading' });
+  const latestBalanceRequestIdRef = useRef(0);
+  const hasNegativeBalance = balanceState.status === 'loaded' && balanceState.balance < 0;
 
   const loadBalance = useCallback(() => {
     let isActive = true;
+    const requestId = latestBalanceRequestIdRef.current + 1;
+    latestBalanceRequestIdRef.current = requestId;
 
     setBalanceState({ status: 'loading' });
     getCurrentBalance()
       .then((balance) => {
-        if (isActive) {
+        if (isActive && requestId === latestBalanceRequestIdRef.current) {
           setBalanceState({ status: 'loaded', balance });
         }
       })
       .catch(() => {
-        if (isActive) {
+        if (isActive && requestId === latestBalanceRequestIdRef.current) {
           setBalanceState({ status: 'error' });
         }
       });
@@ -69,7 +73,11 @@ export function JarHeader({ refreshToken = 0 }: JarHeaderProps) {
             styles.balance,
             { backgroundColor: colors.surface, borderColor: colors.border },
           ]}>
-          <MaterialIcons name="monetization-on" size={24} color={colors.coin} />
+          <MaterialIcons
+            name={hasNegativeBalance ? 'money-off' : 'monetization-on'}
+            size={24}
+            color={colors.coin}
+          />
           {balanceState.status === 'loading' ? (
             <ActivityIndicator color={colors.primary} size="small" />
           ) : (

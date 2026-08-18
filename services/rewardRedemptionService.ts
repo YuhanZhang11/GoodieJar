@@ -2,10 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { initDatabase } from '@/database/database';
 import type { CoinTransaction, DailyLog, Reward } from '@/models/types';
-import {
-  createTransaction,
-  getCurrentBalance,
-} from '@/services/coinTransactionService';
+import { createTransaction } from '@/services/coinTransactionService';
 import { getOrCreateDailyLog } from '@/services/dailyLogService';
 import { getRewardById } from '@/services/rewardService';
 import { parseTimestamp } from '@/utils/timestamp';
@@ -73,15 +70,6 @@ export async function redeemReward(input: RedeemRewardInput): Promise<RedeemRewa
 
     if (reward.archivedAt !== null) {
       throw new Error(`Reward with id "${rewardId}" is archived and cannot be redeemed.`);
-    }
-
-    const currentBalance = await getCurrentBalance(db);
-
-    if (currentBalance < reward.coinCost) {
-      throw new Error(
-        `Insufficient coin balance to redeem Reward with id "${rewardId}": ` +
-          `requires ${reward.coinCost}, available ${currentBalance}.`
-      );
     }
 
     const dailyLog = await getOrCreateDailyLog(dailyLogDate, db);

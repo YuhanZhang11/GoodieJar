@@ -106,8 +106,11 @@ export async function createAchievement(
   return achievement;
 }
 
-export async function getAchievementById(id: string): Promise<Achievement | null> {
-  const db = await getDatabase();
+export async function getAchievementById(
+  id: string,
+  database?: SQLiteDatabase
+): Promise<Achievement | null> {
+  const db = database ?? (await getDatabase());
   const row = await db.getFirstAsync<AchievementRow>('SELECT * FROM achievements WHERE id = ?', [
     id,
   ]);
@@ -126,9 +129,11 @@ export async function getActiveAchievements(): Promise<Achievement[]> {
 
 export async function updateAchievement(
   id: string,
-  input: UpdateAchievementInput
+  input: UpdateAchievementInput,
+  database?: SQLiteDatabase
 ): Promise<Achievement | null> {
-  const existingAchievement = await getAchievementById(id);
+  const db = database ?? (await getDatabase());
+  const existingAchievement = await getAchievementById(id, db);
 
   if (!existingAchievement) {
     return null;
@@ -149,8 +154,6 @@ export async function updateAchievement(
         : parseTimestamp(input.achievedAt, 'Achievement achievedAt').timestamp,
   };
 
-  const db = await getDatabase();
-
   await db.runAsync(
     `UPDATE achievements
      SET name = ?,
@@ -170,16 +173,18 @@ export async function updateAchievement(
   return updatedAchievement;
 }
 
-export async function archiveAchievement(id: string): Promise<Achievement | null> {
-  const existingAchievement = await getAchievementById(id);
+export async function archiveAchievement(
+  id: string,
+  database?: SQLiteDatabase
+): Promise<Achievement | null> {
+  const db = database ?? (await getDatabase());
+  const existingAchievement = await getAchievementById(id, db);
 
   if (!existingAchievement) {
     return null;
   }
 
   const archivedAt = new Date().toISOString();
-  const db = await getDatabase();
-
   await db.runAsync('UPDATE achievements SET archived_at = ? WHERE id = ?', [archivedAt, id]);
 
   return {

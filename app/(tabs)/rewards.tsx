@@ -124,12 +124,7 @@ export default function RewardsScreen() {
         successTimer.current = null;
       }, 1800);
     } catch (error) {
-      const message = getErrorMessage(error);
-      const title = message.includes('Insufficient coin balance')
-        ? 'Not enough coins'
-        : 'Could not redeem reward';
-
-      Alert.alert(title, message);
+      Alert.alert('Could not redeem reward', getErrorMessage(error));
     } finally {
       redeemingRewardIdRef.current = null;
       setRedeemingRewardId(null);
