@@ -1,4 +1,5 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import type { PropsWithChildren } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -6,45 +7,59 @@ import { JarHeader } from '@/components/jar-header';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-type JarPageProps = {
+type JarPageProps = PropsWithChildren<{
+  balanceRefreshToken?: number;
+}>;
+
+type JarPagePlaceholderProps = {
   title: string;
   emptyTitle?: string;
   emptyMessage: string;
   actionLabel: string;
 };
 
-export function JarPage({ title, emptyTitle, emptyMessage, actionLabel }: JarPageProps) {
+export function JarPage({ children, balanceRefreshToken = 0 }: JarPageProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
 
   return (
     <SafeAreaView edges={['top']} style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        contentInsetAdjustmentBehavior="automatic"
-        showsVerticalScrollIndicator={false}>
-        <JarHeader />
-
-        <View style={[styles.content, { borderTopColor: colors.border }]}>
-          <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
-          <View style={styles.emptyState}>
-            {emptyTitle ? (
-              <Text style={[styles.emptyTitle, { color: colors.text }]}>{emptyTitle}</Text>
-            ) : null}
-            <Text style={[styles.emptyMessage, { color: colors.mutedText }]}>{emptyMessage}</Text>
-            <View
-              pointerEvents="none"
-              style={[styles.action, { backgroundColor: colors.primary }]}
-              accessibilityElementsHidden>
-              <MaterialIcons name="add" size={20} color={colors.primaryContrast} />
-              <Text style={[styles.actionText, { color: colors.primaryContrast }]}>
-                {actionLabel}
-              </Text>
-            </View>
-          </View>
-        </View>
-      </ScrollView>
+      <View style={styles.headerFrame}>
+        <JarHeader refreshToken={balanceRefreshToken} />
+      </View>
+      <View style={[styles.contentBoundary, { borderTopColor: colors.border }]}>{children}</View>
     </SafeAreaView>
+  );
+}
+
+export function JarPagePlaceholder({
+  title,
+  emptyTitle,
+  emptyMessage,
+  actionLabel,
+}: JarPagePlaceholderProps) {
+  const colorScheme = useColorScheme() ?? 'light';
+  const colors = Colors[colorScheme];
+
+  return (
+    <ScrollView
+      contentContainerStyle={styles.placeholderContent}
+      showsVerticalScrollIndicator={false}>
+      <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+      <View style={styles.emptyState}>
+        {emptyTitle ? (
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>{emptyTitle}</Text>
+        ) : null}
+        <Text style={[styles.emptyMessage, { color: colors.mutedText }]}>{emptyMessage}</Text>
+        <View
+          pointerEvents="none"
+          style={[styles.action, { backgroundColor: colors.primary }]}
+          accessibilityElementsHidden>
+          <MaterialIcons name="add" size={20} color={colors.primaryContrast} />
+          <Text style={[styles.actionText, { color: colors.primaryContrast }]}>{actionLabel}</Text>
+        </View>
+      </View>
+    </ScrollView>
   );
 }
 
@@ -52,20 +67,26 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  scrollContent: {
+  headerFrame: {
     alignSelf: 'center',
-    gap: 20,
     maxWidth: 640,
-    minHeight: '100%',
-    paddingBottom: 32,
+    paddingBottom: 16,
     paddingHorizontal: 22,
     paddingTop: 10,
     width: '100%',
   },
-  content: {
+  contentBoundary: {
+    alignSelf: 'center',
     borderTopWidth: StyleSheet.hairlineWidth,
+    flex: 1,
+    maxWidth: 640,
+    width: '100%',
+  },
+  placeholderContent: {
     gap: 20,
-    paddingTop: 20,
+    paddingBottom: 32,
+    paddingHorizontal: 22,
+    paddingTop: 18,
   },
   title: {
     fontFamily: Fonts.rounded,

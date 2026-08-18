@@ -1,5 +1,6 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useEffect, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { JarVisual } from '@/components/jar-visual';
@@ -12,30 +13,45 @@ type BalanceState =
   | { status: 'loaded'; balance: number }
   | { status: 'error' };
 
-export function JarHeader() {
+type JarHeaderProps = {
+  refreshToken?: number;
+};
+
+export function JarHeader({ refreshToken = 0 }: JarHeaderProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const [balanceState, setBalanceState] = useState<BalanceState>({ status: 'loading' });
 
-  useEffect(() => {
-    let isMounted = true;
+  const loadBalance = useCallback(() => {
+    let isActive = true;
 
+    setBalanceState({ status: 'loading' });
     getCurrentBalance()
       .then((balance) => {
-        if (isMounted) {
+        if (isActive) {
           setBalanceState({ status: 'loaded', balance });
         }
       })
       .catch(() => {
-        if (isMounted) {
+        if (isActive) {
           setBalanceState({ status: 'error' });
         }
       });
 
     return () => {
-      isMounted = false;
+      isActive = false;
     };
   }, []);
+
+  useFocusEffect(loadBalance);
+
+  useEffect(() => {
+    if (refreshToken === 0) {
+      return;
+    }
+
+    return loadBalance();
+  }, [loadBalance, refreshToken]);
 
   return (
     <View style={styles.container}>
