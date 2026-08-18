@@ -114,8 +114,11 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
   return task;
 }
 
-export async function getTaskById(id: string): Promise<Task | null> {
-  const db = await getDatabase();
+export async function getTaskById(
+  id: string,
+  database?: SQLiteDatabase
+): Promise<Task | null> {
+  const db = database ?? (await getDatabase());
   const row = await db.getFirstAsync<TaskRow>('SELECT * FROM tasks WHERE id = ?', [id]);
 
   return row ? mapTaskRow(row) : null;

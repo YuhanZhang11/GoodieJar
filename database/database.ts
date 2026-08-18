@@ -2,8 +2,8 @@ import * as SQLite from 'expo-sqlite';
 
 import { createAllTables } from './schema';
 
-export async function initDatabase() {
-  const db = await SQLite.openDatabaseAsync('goodiejar.db');
+export async function initDatabase(options?: SQLite.SQLiteOpenOptions) {
+  const db = await SQLite.openDatabaseAsync('goodiejar.db', options);
 
   // Improve SQLite performance for the app
   await db.execAsync(`

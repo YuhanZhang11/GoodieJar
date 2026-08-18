@@ -141,8 +141,11 @@ async function getDatabase(): Promise<SQLiteDatabase> {
   return initDatabase();
 }
 
-export async function createTransaction(input: CreateTransactionInput): Promise<CoinTransaction> {
-  const db = await getDatabase();
+export async function createTransaction(
+  input: CreateTransactionInput,
+  database?: SQLiteDatabase
+): Promise<CoinTransaction> {
+  const db = database ?? (await getDatabase());
   const sources = validateSources(input);
   const transaction: CoinTransaction = {
     id: createId(),

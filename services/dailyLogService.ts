@@ -61,9 +61,12 @@ export async function getDailyLogByDate(date: string): Promise<DailyLog | null> 
   return row ? mapDailyLogRow(row) : null;
 }
 
-export async function getOrCreateDailyLog(date: string): Promise<DailyLog> {
+export async function getOrCreateDailyLog(
+  date: string,
+  database?: SQLiteDatabase
+): Promise<DailyLog> {
   const validDate = validateDate(date);
-  const db = await getDatabase();
+  const db = database ?? (await getDatabase());
   const existingRow = await db.getFirstAsync<DailyLogRow>('SELECT * FROM daily_logs WHERE date = ?', [
     validDate,
   ]);
