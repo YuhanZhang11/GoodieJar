@@ -5,34 +5,36 @@ import type { SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSw
 import { SwipeableRow } from '@/components/swipeable-row';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import type { Task } from '@/models/types';
+import type { Reward } from '@/models/types';
 
-type TaskListItemProps = {
-  task: Task;
+type RewardListItemProps = {
+  reward: Reward;
   isDisabled: boolean;
-  isCompleting: boolean;
-  onComplete: (task: Task) => void;
-  onEdit: (task: Task) => void;
-  onDelete: (task: Task) => void;
+  isRedeeming: boolean;
+  wasJustRedeemed: boolean;
+  onRedeem: (reward: Reward) => void;
+  onEdit: (reward: Reward) => void;
+  onDelete: (reward: Reward) => void;
   onSwipeOpen: (methods: SwipeableMethods) => void;
   onSwipeClose: (methods: SwipeableMethods) => void;
 };
 
-export function TaskListItem({
-  task,
+export function RewardListItem({
+  reward,
   isDisabled,
-  isCompleting,
-  onComplete,
+  isRedeeming,
+  wasJustRedeemed,
+  onRedeem,
   onEdit,
   onDelete,
   onSwipeOpen,
   onSwipeClose,
-}: TaskListItemProps) {
+}: RewardListItemProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const description = task.description.trim();
+  const description = reward.description.trim();
   const metadata = [
-    task.estimatedDurationMinutes === null ? null : `${task.estimatedDurationMinutes} min`,
+    reward.estimatedDurationMinutes === null ? null : `${reward.estimatedDurationMinutes} min`,
     description || null,
   ]
     .filter((value): value is string => value !== null)
@@ -42,38 +44,50 @@ export function TaskListItem({
     <SwipeableRow
       disabled={isDisabled}
       onClose={onSwipeClose}
-      onDelete={() => onDelete(task)}
-      onEdit={() => onEdit(task)}
+      onDelete={() => onDelete(reward)}
+      onEdit={() => onEdit(reward)}
       onOpen={onSwipeOpen}>
       <View style={[styles.container, { borderBottomColor: colors.border }]}>
         <View style={styles.primaryRow}>
           <Text ellipsizeMode="tail" numberOfLines={1} style={[styles.name, { color: colors.text }]}>
-            {task.name}
+            {reward.name}
           </Text>
 
-          <View style={[styles.reward, { backgroundColor: colors.surfaceMuted }]}>
+          <View style={[styles.cost, { backgroundColor: colors.surfaceMuted }]}>
             <MaterialIcons name="monetization-on" size={17} color={colors.coin} />
-            <Text style={[styles.rewardText, { color: colors.text }]}>+{task.coinReward}</Text>
+            <Text style={[styles.costText, { color: colors.text }]}>-{reward.coinCost}</Text>
           </View>
 
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Complete ${task.name}`}
-            disabled={isDisabled}
-            onPress={() => onComplete(task)}
+            accessibilityLabel={
+              wasJustRedeemed ? `${reward.name} redeemed` : `Redeem ${reward.name}`
+            }
+            disabled={isDisabled || wasJustRedeemed}
+            onPress={() => onRedeem(reward)}
             style={({ pressed }) => [
-              styles.doneButton,
+              styles.redeemButton,
               {
-                backgroundColor: colors.primary,
+                backgroundColor: wasJustRedeemed ? colors.surfaceMuted : colors.primary,
                 opacity: pressed || isDisabled ? 0.7 : 1,
               },
             ]}>
-            {isCompleting ? (
+            {isRedeeming ? (
               <ActivityIndicator color={colors.primaryContrast} size="small" />
             ) : (
               <>
-                <MaterialIcons name="done" size={17} color={colors.primaryContrast} />
-                <Text style={[styles.doneText, { color: colors.primaryContrast }]}>Done</Text>
+                <MaterialIcons
+                  name={wasJustRedeemed ? 'check' : 'redeem'}
+                  size={17}
+                  color={wasJustRedeemed ? colors.primary : colors.primaryContrast}
+                />
+                <Text
+                  style={[
+                    styles.redeemText,
+                    { color: wasJustRedeemed ? colors.primary : colors.primaryContrast },
+                  ]}>
+                  {wasJustRedeemed ? 'Redeemed' : 'Redeem'}
+                </Text>
               </>
             )}
           </Pressable>
@@ -110,7 +124,7 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     minWidth: 0,
   },
-  reward: {
+  cost: {
     alignItems: 'center',
     borderRadius: 8,
     flexDirection: 'row',
@@ -119,12 +133,12 @@ const styles = StyleSheet.create({
     minHeight: 28,
     paddingHorizontal: 7,
   },
-  rewardText: {
+  costText: {
     fontSize: 13,
     fontWeight: '700',
     lineHeight: 18,
   },
-  doneButton: {
+  redeemButton: {
     alignItems: 'center',
     borderRadius: 8,
     flexDirection: 'row',
@@ -132,10 +146,10 @@ const styles = StyleSheet.create({
     gap: 3,
     justifyContent: 'center',
     minHeight: 34,
-    minWidth: 72,
-    paddingHorizontal: 9,
+    paddingHorizontal: 8,
+    width: 96,
   },
-  doneText: {
+  redeemText: {
     fontSize: 13,
     fontWeight: '700',
     lineHeight: 18,

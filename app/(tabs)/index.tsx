@@ -1,7 +1,8 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import type { SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 
 import { JarPage } from '@/components/jar-page';
 import { TaskFormModal } from '@/components/task-form-modal';
@@ -11,9 +12,16 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { Task } from '@/models/types';
 import { getTransactionsByDate } from '@/services/coinTransactionService';
 import { completeTask } from '@/services/taskCompletionService';
-import { createTask, getActiveTasks, type CreateTaskInput } from '@/services/taskService';
+import {
+  archiveTask,
+  createTask,
+  getActiveTasks,
+  updateTask,
+  type CreateTaskInput,
+} from '@/services/taskService';
 
 type LoadState = 'loading' | 'loaded' | 'error';
+type TaskFormState = { mode: 'add' } | { mode: 'edit'; task: Task };
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'The task could not be completed.';
@@ -32,9 +40,12 @@ export default function TasksScreen() {
   const colors = Colors[colorScheme];
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loadState, setLoadState] = useState<LoadState>('loading');
-  const [isTaskModalVisible, setIsTaskModalVisible] = useState(false);
+  const [taskFormState, setTaskFormState] = useState<TaskFormState | null>(null);
   const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
+  const [archivingTaskId, setArchivingTaskId] = useState<string | null>(null);
   const [balanceRefreshToken, setBalanceRefreshToken] = useState(0);
+  const archivingTaskIdRef = useRef<string | null>(null);
+  const openSwipeableRef = useRef<SwipeableMethods | null>(null);
 
   const loadTasks = useCallback(async () => {
     setLoadState('loading');
@@ -75,11 +86,31 @@ export default function TasksScreen() {
     void loadTasks();
   }
 
-  async function completeSelectedTask(task: Task) {
-    if (completingTaskId !== null) {
+  async function submitTaskForm(input: CreateTaskInput) {
+    if (taskFormState?.mode !== 'edit') {
+      await addTask(input);
       return;
     }
 
+    const updatedTask = await updateTask(taskFormState.task.id, input);
+
+    if (!updatedTask) {
+      throw new Error('Task no longer exists.');
+    }
+
+    setTasks((currentTasks) =>
+      currentTasks.map((task) => (task.id === updatedTask.id ? updatedTask : task))
+    );
+    setLoadState('loaded');
+    void loadTasks();
+  }
+
+  async function completeSelectedTask(task: Task) {
+    if (completingTaskId !== null || archivingTaskIdRef.current !== null) {
+      return;
+    }
+
+    openSwipeableRef.current?.close();
     setCompletingTaskId(task.id);
 
     try {
@@ -90,6 +121,75 @@ export default function TasksScreen() {
       Alert.alert('Could not complete task', getErrorMessage(error));
     } finally {
       setCompletingTaskId(null);
+    }
+  }
+
+  function openTaskFormForAdd() {
+    openSwipeableRef.current?.close();
+    setTaskFormState({ mode: 'add' });
+  }
+
+  function openTaskFormForEdit(task: Task) {
+    if (completingTaskId !== null || archivingTaskIdRef.current !== null) {
+      return;
+    }
+
+    setTaskFormState({ mode: 'edit', task });
+  }
+
+  async function archiveSelectedTask(task: Task) {
+    if (completingTaskId !== null || archivingTaskIdRef.current !== null) {
+      return;
+    }
+
+    archivingTaskIdRef.current = task.id;
+    setArchivingTaskId(task.id);
+
+    try {
+      const archivedTask = await archiveTask(task.id);
+
+      if (!archivedTask) {
+        throw new Error('Task no longer exists.');
+      }
+
+      setTasks((currentTasks) => currentTasks.filter((currentTask) => currentTask.id !== task.id));
+    } catch (error) {
+      Alert.alert('Could not delete task', getErrorMessage(error));
+    } finally {
+      archivingTaskIdRef.current = null;
+      setArchivingTaskId(null);
+    }
+  }
+
+  function confirmDeleteTask(task: Task) {
+    if (completingTaskId !== null || archivingTaskIdRef.current !== null) {
+      return;
+    }
+
+    Alert.alert(
+      'Delete task?',
+      `"${task.name}" will be removed from your Tasks.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => void archiveSelectedTask(task),
+        },
+      ]
+    );
+  }
+
+  function registerOpenSwipeable(methods: SwipeableMethods) {
+    if (openSwipeableRef.current !== methods) {
+      openSwipeableRef.current?.close();
+      openSwipeableRef.current = methods;
+    }
+  }
+
+  function clearOpenSwipeable(methods: SwipeableMethods) {
+    if (openSwipeableRef.current === methods) {
+      openSwipeableRef.current = null;
     }
   }
 
@@ -141,7 +241,7 @@ export default function TasksScreen() {
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Tasks</Text>
             <Pressable
               accessibilityRole="button"
-              onPress={() => setIsTaskModalVisible(true)}
+              onPress={openTaskFormForAdd}
               style={({ pressed }) => [
                 styles.addButton,
                 { backgroundColor: colors.surface, opacity: pressed ? 0.65 : 1 },
@@ -154,8 +254,12 @@ export default function TasksScreen() {
         renderItem={({ item }) => (
           <TaskListItem
             isCompleting={completingTaskId === item.id}
-            isDisabled={completingTaskId !== null}
+            isDisabled={completingTaskId !== null || archivingTaskId !== null}
             onComplete={(task) => void completeSelectedTask(task)}
+            onDelete={confirmDeleteTask}
+            onEdit={openTaskFormForEdit}
+            onSwipeClose={clearOpenSwipeable}
+            onSwipeOpen={registerOpenSwipeable}
             task={item}
           />
         )}
@@ -163,9 +267,11 @@ export default function TasksScreen() {
       />
 
       <TaskFormModal
-        onRequestClose={() => setIsTaskModalVisible(false)}
-        onSubmit={addTask}
-        visible={isTaskModalVisible}
+        initialValues={taskFormState?.mode === 'edit' ? taskFormState.task : null}
+        mode={taskFormState?.mode ?? 'add'}
+        onRequestClose={() => setTaskFormState(null)}
+        onSubmit={submitTaskForm}
+        visible={taskFormState !== null}
       />
     </JarPage>
   );

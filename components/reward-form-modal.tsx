@@ -16,15 +16,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import type { Task } from '@/models/types';
-import type { CreateTaskInput } from '@/services/taskService';
+import type { Reward } from '@/models/types';
+import type { CreateRewardInput } from '@/services/rewardService';
 
-type TaskFormModalProps = {
+type RewardFormModalProps = {
   visible: boolean;
   mode: 'add' | 'edit';
-  initialValues?: Task | null;
+  initialValues?: Reward | null;
   onRequestClose: () => void;
-  onSubmit: (input: CreateTaskInput) => Promise<void>;
+  onSubmit: (input: CreateRewardInput) => Promise<void>;
 };
 
 function isPositiveIntegerInput(value: string): boolean {
@@ -34,21 +34,21 @@ function isPositiveIntegerInput(value: string): boolean {
 }
 
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Task could not be added. Please try again.';
+  return error instanceof Error ? error.message : 'Reward could not be added. Please try again.';
 }
 
-export function TaskFormModal({
+export function RewardFormModal({
   visible,
   mode,
   initialValues,
   onRequestClose,
   onSubmit,
-}: TaskFormModalProps) {
+}: RewardFormModalProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [coinReward, setCoinReward] = useState('');
+  const [coinCost, setCoinCost] = useState('');
   const [estimatedDuration, setEstimatedDuration] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -58,7 +58,7 @@ export function TaskFormModal({
     estimatedDuration.trim().length === 0 || isPositiveIntegerInput(estimatedDuration);
   const canSubmit =
     name.trim().length > 0 &&
-    isPositiveIntegerInput(coinReward) &&
+    isPositiveIntegerInput(coinCost) &&
     durationIsValid &&
     !isSubmitting;
 
@@ -69,7 +69,7 @@ export function TaskFormModal({
 
     setName(isEditMode && initialValues ? initialValues.name : '');
     setDescription(isEditMode && initialValues ? initialValues.description : '');
-    setCoinReward(isEditMode && initialValues ? String(initialValues.coinReward) : '');
+    setCoinCost(isEditMode && initialValues ? String(initialValues.coinCost) : '');
     setEstimatedDuration(
       isEditMode && initialValues?.estimatedDurationMinutes !== null
         ? String(initialValues?.estimatedDurationMinutes ?? '')
@@ -81,7 +81,7 @@ export function TaskFormModal({
   function resetForm() {
     setName('');
     setDescription('');
-    setCoinReward('');
+    setCoinCost('');
     setEstimatedDuration('');
     setErrorMessage(null);
   }
@@ -95,7 +95,7 @@ export function TaskFormModal({
     onRequestClose();
   }
 
-  async function submitTask() {
+  async function submitReward() {
     if (!canSubmit || isSubmittingRef.current) {
       return;
     }
@@ -108,7 +108,7 @@ export function TaskFormModal({
       await onSubmit({
         name,
         description,
-        coinReward: Number(coinReward),
+        coinCost: Number(coinCost),
         estimatedDurationMinutes:
           estimatedDuration.trim().length === 0 ? null : Number(estimatedDuration),
       });
@@ -138,9 +138,9 @@ export function TaskFormModal({
             showsVerticalScrollIndicator={false}>
             <View style={styles.modalHeader}>
               <View>
-                <Text style={[styles.eyebrow, { color: colors.mutedText }]}>Tasks</Text>
+                <Text style={[styles.eyebrow, { color: colors.mutedText }]}>Rewards</Text>
                 <Text style={[styles.title, { color: colors.text }]}>
-                  {isEditMode ? 'Edit Task' : 'Add Task'}
+                  {isEditMode ? 'Edit Reward' : 'Add Reward'}
                 </Text>
               </View>
               <Pressable
@@ -155,12 +155,12 @@ export function TaskFormModal({
 
             <View style={styles.fields}>
               <View style={styles.field}>
-                <Text style={[styles.label, { color: colors.text }]}>Task name</Text>
+                <Text style={[styles.label, { color: colors.text }]}>Reward name</Text>
                 <TextInput
                   autoFocus
                   maxLength={120}
                   onChangeText={setName}
-                  placeholder="Study for tomorrow's class"
+                  placeholder="Watch a movie"
                   placeholderTextColor={colors.mutedText}
                   selectionColor={colors.primary}
                   style={[
@@ -200,12 +200,12 @@ export function TaskFormModal({
 
               <View style={styles.numberFields}>
                 <View style={[styles.field, styles.numberField]}>
-                  <Text style={[styles.label, { color: colors.text }]}>Coin reward</Text>
+                  <Text style={[styles.label, { color: colors.text }]}>Coin cost</Text>
                   <TextInput
                     keyboardType="number-pad"
                     maxLength={9}
-                    onChangeText={setCoinReward}
-                    placeholder="10"
+                    onChangeText={setCoinCost}
+                    placeholder="20"
                     placeholderTextColor={colors.mutedText}
                     selectionColor={colors.primary}
                     style={[
@@ -216,7 +216,7 @@ export function TaskFormModal({
                         color: colors.text,
                       },
                     ]}
-                    value={coinReward}
+                    value={coinCost}
                   />
                 </View>
 
@@ -263,7 +263,7 @@ export function TaskFormModal({
               <Pressable
                 accessibilityRole="button"
                 disabled={!canSubmit}
-                onPress={submitTask}
+                onPress={submitReward}
                 style={({ pressed }) => [
                   styles.primaryButton,
                   {
@@ -281,7 +281,7 @@ export function TaskFormModal({
                       color={colors.primaryContrast}
                     />
                     <Text style={[styles.primaryButtonText, { color: colors.primaryContrast }]}>
-                      {isEditMode ? 'Save' : 'Add Task'}
+                      {isEditMode ? 'Save' : 'Add Reward'}
                     </Text>
                   </>
                 )}
@@ -391,7 +391,7 @@ const styles = StyleSheet.create({
     gap: 6,
     justifyContent: 'center',
     minHeight: 46,
-    minWidth: 120,
+    minWidth: 132,
     paddingHorizontal: 17,
   },
   primaryButtonText: {
