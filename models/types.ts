@@ -1,7 +1,16 @@
+export interface TaskCategory {
+  id: string;
+  name: string;
+  isSystem: boolean;
+  createdAt: string;
+  archivedAt: string | null;
+}
+
 export interface Task {
   id: string;
   name: string;
   description: string;
+  categoryId: string;
 
   coinReward: number;
   estimatedDurationMinutes: number | null;
@@ -27,6 +36,18 @@ export interface DailyLog {
   date: string;
 
   mentalExhaustion: number | null;
+}
+
+export type TaskPriority = 'NORMAL' | 'IMPORTANT' | 'URGENT';
+
+export interface DailyTaskPlan {
+  id: string;
+  taskId: string;
+  dailyLogId: string;
+  categoryId: string;
+  plannedDurationMinutes: number;
+  priority: TaskPriority;
+  createdAt: string;
 }
 
 export type TransactionType = 'EARN' | 'SPEND';

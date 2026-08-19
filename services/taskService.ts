@@ -1,12 +1,15 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { initDatabase } from '@/database/database';
+import { OTHER_TASK_CATEGORY_ID } from '@/database/defaultTaskCategories';
 import type { Task } from '@/models/types';
+import { getTaskCategoryById } from '@/services/taskCategoryService';
 
 type TaskRow = {
   id: string;
   name: string;
   description: string;
+  category_id: string;
   coin_reward: number;
   estimated_duration_minutes: number | null;
   created_at: string;
@@ -16,6 +19,7 @@ type TaskRow = {
 export type CreateTaskInput = {
   name: string;
   description?: string;
+  categoryId?: string;
   coinReward: number;
   estimatedDurationMinutes?: number | null;
 };
@@ -23,6 +27,7 @@ export type CreateTaskInput = {
 export type UpdateTaskInput = {
   name?: string;
   description?: string;
+  categoryId?: string;
   coinReward?: number;
   estimatedDurationMinutes?: number | null;
 };
@@ -32,6 +37,7 @@ function mapTaskRow(row: TaskRow): Task {
     id: row.id,
     name: row.name,
     description: row.description,
+    categoryId: row.category_id,
     coinReward: row.coin_reward,
     estimatedDurationMinutes: row.estimated_duration_minutes,
     createdAt: row.created_at,
@@ -73,6 +79,29 @@ function validateEstimatedDuration(estimatedDurationMinutes: number | null | und
   return estimatedDurationMinutes;
 }
 
+async function resolveActiveCategoryId(
+  categoryId: string | undefined,
+  db: SQLiteDatabase
+): Promise<string> {
+  const resolvedCategoryId = (categoryId ?? OTHER_TASK_CATEGORY_ID).trim();
+
+  if (resolvedCategoryId.length === 0) {
+    throw new Error('Task categoryId must not be blank.');
+  }
+
+  const category = await getTaskCategoryById(resolvedCategoryId, db);
+
+  if (!category) {
+    throw new Error(`Task category with id "${resolvedCategoryId}" does not exist.`);
+  }
+
+  if (category.archivedAt !== null) {
+    throw new Error(`Task category with id "${resolvedCategoryId}" is archived.`);
+  }
+
+  return category.id;
+}
+
 async function getDatabase(): Promise<SQLiteDatabase> {
   return initDatabase();
 }
@@ -84,6 +113,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
     id: createId(),
     name: validateName(input.name),
     description: input.description ?? '',
+    categoryId: await resolveActiveCategoryId(input.categoryId, db),
     coinReward: validateCoinReward(input.coinReward),
     estimatedDurationMinutes: validateEstimatedDuration(input.estimatedDurationMinutes),
     createdAt: now,
@@ -95,15 +125,17 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       id,
       name,
       description,
+      category_id,
       coin_reward,
       estimated_duration_minutes,
       created_at,
       archived_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       task.id,
       task.name,
       task.description,
+      task.categoryId,
       task.coinReward,
       task.estimatedDurationMinutes,
       task.createdAt,
@@ -134,7 +166,8 @@ export async function getActiveTasks(): Promise<Task[]> {
 }
 
 export async function updateTask(id: string, input: UpdateTaskInput): Promise<Task | null> {
-  const existingTask = await getTaskById(id);
+  const db = await getDatabase();
+  const existingTask = await getTaskById(id, db);
 
   if (!existingTask) {
     return null;
@@ -144,6 +177,10 @@ export async function updateTask(id: string, input: UpdateTaskInput): Promise<Ta
     ...existingTask,
     name: input.name === undefined ? existingTask.name : validateName(input.name),
     description: input.description === undefined ? existingTask.description : input.description,
+    categoryId:
+      input.categoryId === undefined
+        ? existingTask.categoryId
+        : await resolveActiveCategoryId(input.categoryId, db),
     coinReward:
       input.coinReward === undefined
         ? existingTask.coinReward
@@ -154,18 +191,18 @@ export async function updateTask(id: string, input: UpdateTaskInput): Promise<Ta
         : validateEstimatedDuration(input.estimatedDurationMinutes),
   };
 
-  const db = await getDatabase();
-
   await db.runAsync(
     `UPDATE tasks
      SET name = ?,
          description = ?,
+         category_id = ?,
          coin_reward = ?,
          estimated_duration_minutes = ?
      WHERE id = ?`,
     [
       updatedTask.name,
       updatedTask.description,
+      updatedTask.categoryId,
       updatedTask.coinReward,
       updatedTask.estimatedDurationMinutes,
       updatedTask.id,

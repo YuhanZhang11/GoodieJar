@@ -1,14 +1,29 @@
+export const createTaskCategoriesTable = `
+  CREATE TABLE IF NOT EXISTS task_categories (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    is_system INTEGER NOT NULL
+      CHECK (is_system IN (0, 1)),
+    created_at TEXT NOT NULL,
+    archived_at TEXT
+  );
+`;
+
 export const createTasksTable = `
   CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
     description TEXT NOT NULL,
+    category_id TEXT NOT NULL,
 
     coin_reward INTEGER NOT NULL,
     estimated_duration_minutes INTEGER,
 
     created_at TEXT NOT NULL,
-    archived_at TEXT
+    archived_at TEXT,
+
+    FOREIGN KEY (category_id)
+      REFERENCES task_categories(id)
   );
 `;
 
@@ -85,10 +100,86 @@ export const createCoinTransactionsTable = `
   );
 `;
 
+export const createDailyTaskPlansTable = `
+  CREATE TABLE IF NOT EXISTS daily_task_plans (
+    id TEXT PRIMARY KEY NOT NULL,
+    task_id TEXT NOT NULL,
+    daily_log_id TEXT NOT NULL,
+    category_id TEXT NOT NULL,
+    planned_duration_minutes INTEGER NOT NULL
+      CHECK (planned_duration_minutes > 0),
+    priority TEXT NOT NULL
+      CHECK (priority IN ('NORMAL', 'IMPORTANT', 'URGENT')),
+    created_at TEXT NOT NULL,
+
+    UNIQUE (daily_log_id, task_id),
+
+    FOREIGN KEY (task_id)
+      REFERENCES tasks(id)
+      ON DELETE CASCADE,
+
+    FOREIGN KEY (daily_log_id)
+      REFERENCES daily_logs(id)
+      ON DELETE CASCADE,
+
+    FOREIGN KEY (category_id)
+      REFERENCES task_categories(id)
+  );
+`;
+
+export const createAllIndexes = `
+  CREATE UNIQUE INDEX IF NOT EXISTS task_categories_active_name_unique
+    ON task_categories (LOWER(TRIM(name)))
+    WHERE archived_at IS NULL;
+
+  CREATE INDEX IF NOT EXISTS tasks_category_id_index
+    ON tasks (category_id);
+
+  CREATE INDEX IF NOT EXISTS daily_task_plans_task_id_index
+    ON daily_task_plans (task_id);
+
+  CREATE INDEX IF NOT EXISTS daily_task_plans_category_id_index
+    ON daily_task_plans (category_id);
+`;
+
+export const createTaskCategoryIntegrityTriggers = `
+  CREATE TRIGGER IF NOT EXISTS tasks_category_id_required_on_insert
+  BEFORE INSERT ON tasks
+  WHEN NEW.category_id IS NULL
+  BEGIN
+    SELECT RAISE(ABORT, 'tasks.category_id must not be null');
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS tasks_category_id_required_on_update
+  BEFORE UPDATE OF category_id ON tasks
+  WHEN NEW.category_id IS NULL
+  BEGIN
+    SELECT RAISE(ABORT, 'tasks.category_id must not be null');
+  END;
+`;
+
+export const createDailyTaskPlanCategoryIntegrityTriggers = `
+  CREATE TRIGGER IF NOT EXISTS daily_task_plans_category_id_required_on_insert
+  BEFORE INSERT ON daily_task_plans
+  WHEN NEW.category_id IS NULL
+  BEGIN
+    SELECT RAISE(ABORT, 'daily_task_plans.category_id must not be null');
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS daily_task_plans_category_id_required_on_update
+  BEFORE UPDATE OF category_id ON daily_task_plans
+  WHEN NEW.category_id IS NULL
+  BEGIN
+    SELECT RAISE(ABORT, 'daily_task_plans.category_id must not be null');
+  END;
+`;
+
 export const createAllTables = `
+  ${createTaskCategoriesTable}
   ${createTasksTable}
   ${createRewardsTable}
   ${createDailyLogsTable}
   ${createAchievementsTable}
   ${createCoinTransactionsTable}
+  ${createDailyTaskPlansTable}
 `;

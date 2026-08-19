@@ -2,6 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { initDatabase } from '@/database/database';
 import type { DailyLog } from '@/models/types';
+import { validateLocalDateKey } from '@/utils/localDate';
 
 type DailyLogRow = {
   id: string;
@@ -21,20 +22,6 @@ function createId(): string {
   return `daily_log_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function validateDate(date: string): string {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    throw new Error('DailyLog date must use YYYY-MM-DD format.');
-  }
-
-  const parsedDate = new Date(`${date}T00:00:00.000Z`);
-
-  if (Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date) {
-    throw new Error('DailyLog date must be a valid calendar date.');
-  }
-
-  return date;
-}
-
 function validateMentalExhaustion(mentalExhaustion: number | null): number | null {
   if (mentalExhaustion === null) {
     return null;
@@ -52,7 +39,7 @@ async function getDatabase(): Promise<SQLiteDatabase> {
 }
 
 export async function getDailyLogByDate(date: string): Promise<DailyLog | null> {
-  const validDate = validateDate(date);
+  const validDate = validateLocalDateKey(date, 'DailyLog date');
   const db = await getDatabase();
   const row = await db.getFirstAsync<DailyLogRow>('SELECT * FROM daily_logs WHERE date = ?', [
     validDate,
@@ -65,7 +52,7 @@ export async function getOrCreateDailyLog(
   date: string,
   database?: SQLiteDatabase
 ): Promise<DailyLog> {
-  const validDate = validateDate(date);
+  const validDate = validateLocalDateKey(date, 'DailyLog date');
   const db = database ?? (await getDatabase());
   const existingRow = await db.getFirstAsync<DailyLogRow>('SELECT * FROM daily_logs WHERE date = ?', [
     validDate,
@@ -98,7 +85,7 @@ export async function updateMentalExhaustion(
   date: string,
   mentalExhaustion: number | null
 ): Promise<DailyLog> {
-  const validDate = validateDate(date);
+  const validDate = validateLocalDateKey(date, 'DailyLog date');
   const validMentalExhaustion = validateMentalExhaustion(mentalExhaustion);
   const dailyLog = await getOrCreateDailyLog(validDate);
   const db = await getDatabase();
