@@ -10,7 +10,7 @@ type TaskRow = {
   name: string;
   description: string;
   category_id: string;
-  coin_reward: number;
+  coins_per_hour: number;
   estimated_duration_minutes: number | null;
   created_at: string;
   archived_at: string | null;
@@ -20,7 +20,7 @@ export type CreateTaskInput = {
   name: string;
   description?: string;
   categoryId?: string;
-  coinReward: number;
+  coinsPerHour: number;
   estimatedDurationMinutes?: number | null;
 };
 
@@ -28,7 +28,7 @@ export type UpdateTaskInput = {
   name?: string;
   description?: string;
   categoryId?: string;
-  coinReward?: number;
+  coinsPerHour?: number;
   estimatedDurationMinutes?: number | null;
 };
 
@@ -38,7 +38,7 @@ function mapTaskRow(row: TaskRow): Task {
     name: row.name,
     description: row.description,
     categoryId: row.category_id,
-    coinReward: row.coin_reward,
+    coinsPerHour: row.coins_per_hour,
     estimatedDurationMinutes: row.estimated_duration_minutes,
     createdAt: row.created_at,
     archivedAt: row.archived_at,
@@ -59,12 +59,12 @@ function validateName(name: string): string {
   return trimmedName;
 }
 
-function validateCoinReward(coinReward: number): number {
-  if (!Number.isInteger(coinReward) || coinReward <= 0) {
-    throw new Error('Task coinReward must be an integer greater than 0.');
+function validateCoinsPerHour(coinsPerHour: number): number {
+  if (!Number.isInteger(coinsPerHour) || coinsPerHour <= 0) {
+    throw new Error('Task coinsPerHour must be an integer greater than 0.');
   }
 
-  return coinReward;
+  return coinsPerHour;
 }
 
 function validateEstimatedDuration(estimatedDurationMinutes: number | null | undefined) {
@@ -83,7 +83,29 @@ async function resolveActiveCategoryId(
   categoryId: string | undefined,
   db: SQLiteDatabase
 ): Promise<string> {
-  const resolvedCategoryId = (categoryId ?? OTHER_TASK_CATEGORY_ID).trim();
+  if (categoryId === undefined) {
+    const defaultCategory = await getTaskCategoryById(OTHER_TASK_CATEGORY_ID, db);
+
+    if (defaultCategory?.archivedAt === null) {
+      return defaultCategory.id;
+    }
+
+    const fallbackCategory = await db.getFirstAsync<{ id: string }>(
+      `SELECT id
+       FROM task_categories
+       WHERE archived_at IS NULL
+       ORDER BY name COLLATE NOCASE ASC, id ASC
+       LIMIT 1`
+    );
+
+    if (!fallbackCategory) {
+      throw new Error('Task categoryId is required because there are no active Task categories.');
+    }
+
+    return fallbackCategory.id;
+  }
+
+  const resolvedCategoryId = categoryId.trim();
 
   if (resolvedCategoryId.length === 0) {
     throw new Error('Task categoryId must not be blank.');
@@ -114,7 +136,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
     name: validateName(input.name),
     description: input.description ?? '',
     categoryId: await resolveActiveCategoryId(input.categoryId, db),
-    coinReward: validateCoinReward(input.coinReward),
+    coinsPerHour: validateCoinsPerHour(input.coinsPerHour),
     estimatedDurationMinutes: validateEstimatedDuration(input.estimatedDurationMinutes),
     createdAt: now,
     archivedAt: null,
@@ -127,16 +149,18 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       description,
       category_id,
       coin_reward,
+      coins_per_hour,
       estimated_duration_minutes,
       created_at,
       archived_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       task.id,
       task.name,
       task.description,
       task.categoryId,
-      task.coinReward,
+      task.coinsPerHour,
+      task.coinsPerHour,
       task.estimatedDurationMinutes,
       task.createdAt,
       task.archivedAt,
@@ -181,10 +205,10 @@ export async function updateTask(id: string, input: UpdateTaskInput): Promise<Ta
       input.categoryId === undefined
         ? existingTask.categoryId
         : await resolveActiveCategoryId(input.categoryId, db),
-    coinReward:
-      input.coinReward === undefined
-        ? existingTask.coinReward
-        : validateCoinReward(input.coinReward),
+    coinsPerHour:
+      input.coinsPerHour === undefined
+        ? existingTask.coinsPerHour
+        : validateCoinsPerHour(input.coinsPerHour),
     estimatedDurationMinutes:
       input.estimatedDurationMinutes === undefined
         ? existingTask.estimatedDurationMinutes
@@ -197,13 +221,15 @@ export async function updateTask(id: string, input: UpdateTaskInput): Promise<Ta
          description = ?,
          category_id = ?,
          coin_reward = ?,
+         coins_per_hour = ?,
          estimated_duration_minutes = ?
      WHERE id = ?`,
     [
       updatedTask.name,
       updatedTask.description,
       updatedTask.categoryId,
-      updatedTask.coinReward,
+      updatedTask.coinsPerHour,
+      updatedTask.coinsPerHour,
       updatedTask.estimatedDurationMinutes,
       updatedTask.id,
     ]

@@ -191,9 +191,12 @@ export async function getTransactionById(id: string): Promise<CoinTransaction | 
   return row ? mapCoinTransactionRow(row) : null;
 }
 
-export async function getTransactionsByDailyLogId(dailyLogId: string): Promise<CoinTransaction[]> {
+export async function getTransactionsByDailyLogId(
+  dailyLogId: string,
+  database?: SQLiteDatabase
+): Promise<CoinTransaction[]> {
   const validDailyLogId = validateNonBlank(dailyLogId, 'dailyLogId');
-  const db = await getDatabase();
+  const db = database ?? (await getDatabase());
   const rows = await db.getAllAsync<CoinTransactionRow>(
     'SELECT * FROM coin_transactions WHERE daily_log_id = ? ORDER BY occurred_at ASC',
     [validDailyLogId]

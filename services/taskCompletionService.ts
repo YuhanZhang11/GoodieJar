@@ -1,8 +1,15 @@
+import type { SQLiteDatabase } from 'expo-sqlite';
+
 import { initDatabase } from '@/database/database';
-import type { CoinTransaction, DailyLog, Task } from '@/models/types';
-import { createTransaction } from '@/services/coinTransactionService';
+import type { CoinTransaction, DailyLog, DailyTaskPlan, Task } from '@/models/types';
+import {
+  createTransaction,
+  getTransactionsByDailyLogId,
+} from '@/services/coinTransactionService';
+import { getTaskPlanById } from '@/services/dailyTaskPlanService';
 import { getOrCreateDailyLog } from '@/services/dailyLogService';
 import { getTaskById } from '@/services/taskService';
+import { getLocalDateKey } from '@/utils/localDate';
 import { parseTimestamp } from '@/utils/timestamp';
 
 export type CompleteTaskInput = {
@@ -15,6 +22,16 @@ export type CompleteTaskResult = {
   task: Task;
   dailyLog: DailyLog;
   transaction: CoinTransaction;
+};
+
+export type CompleteTaskPlanInput = {
+  planId: string;
+  actualDurationMinutes?: number | null;
+  occurredAt?: string;
+};
+
+export type CompleteTaskPlanResult = CompleteTaskResult & {
+  plan: DailyTaskPlan;
 };
 
 function validateTaskId(taskId: string): string {
@@ -33,18 +50,28 @@ function resolveOccurredAt(occurredAt: string | undefined): { timestamp: string;
   return parseTimestamp(timestamp, 'Task completion occurredAt');
 }
 
-function getLocalCalendarDate(date: Date): string {
-  const year = String(date.getFullYear()).padStart(4, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+async function rollbackTransaction(db: SQLiteDatabase): Promise<void> {
+  try {
+    await db.execAsync('ROLLBACK');
+  } catch {
+    // Closing the private connection will roll back any transaction still open.
+  }
+}
 
-  return `${year}-${month}-${day}`;
+function validatePlanId(planId: string): string {
+  const trimmedPlanId = planId.trim();
+
+  if (trimmedPlanId.length === 0) {
+    throw new Error('Task plan completion planId must not be blank.');
+  }
+
+  return trimmedPlanId;
 }
 
 export async function completeTask(input: CompleteTaskInput): Promise<CompleteTaskResult> {
   const taskId = validateTaskId(input.taskId);
   const { timestamp: occurredAt, date: occurredDate } = resolveOccurredAt(input.occurredAt);
-  const dailyLogDate = getLocalCalendarDate(occurredDate);
+  const dailyLogDate = getLocalDateKey(occurredDate);
   const db = await initDatabase({ useNewConnection: true });
   let result: CompleteTaskResult | undefined;
 
@@ -64,7 +91,7 @@ export async function completeTask(input: CompleteTaskInput): Promise<CompleteTa
       const transaction = await createTransaction(
         {
           type: 'EARN',
-          amount: task.coinReward,
+          amount: task.coinsPerHour,
           actualDurationMinutes: input.actualDurationMinutes,
           sourceName: task.name,
           taskId: task.id,
@@ -84,6 +111,88 @@ export async function completeTask(input: CompleteTaskInput): Promise<CompleteTa
 
   if (!result) {
     throw new Error('Task completion did not produce a result.');
+  }
+
+  return result;
+}
+
+export async function completeTaskPlan(
+  input: CompleteTaskPlanInput
+): Promise<CompleteTaskPlanResult> {
+  const planId = validatePlanId(input.planId);
+  const { timestamp: occurredAt, date: occurredDate } = resolveOccurredAt(input.occurredAt);
+  const dailyLogDate = getLocalDateKey(occurredDate);
+  const db = await initDatabase({ useNewConnection: true });
+  let transactionOpen = false;
+  let result: CompleteTaskPlanResult | undefined;
+
+  try {
+    await db.execAsync('BEGIN IMMEDIATE');
+    transactionOpen = true;
+
+    const details = await getTaskPlanById(planId, db);
+
+    if (!details) {
+      throw new Error(`Task plan with id "${planId}" does not exist.`);
+    }
+
+    if (details.task.archivedAt !== null) {
+      throw new Error(`Task with id "${details.task.id}" is archived and cannot be completed.`);
+    }
+
+    const dailyLog = await getOrCreateDailyLog(dailyLogDate, db);
+
+    if (dailyLog.id !== details.plan.dailyLogId) {
+      throw new Error('Task plans can only be completed on their planned local date.');
+    }
+
+    const existingTransactions = await getTransactionsByDailyLogId(dailyLog.id, db);
+    const alreadyCompleted = existingTransactions.some(
+      (transaction) =>
+        transaction.type === 'EARN' && transaction.taskId === details.task.id
+    );
+
+    if (alreadyCompleted) {
+      throw new Error('This Task plan has already been completed.');
+    }
+
+    const transaction = await createTransaction(
+      {
+        type: 'EARN',
+        amount: details.plan.plannedCoinAmount,
+        actualDurationMinutes: input.actualDurationMinutes,
+        sourceName: details.task.name,
+        taskId: details.task.id,
+        rewardId: null,
+        achievementId: null,
+        dailyLogId: dailyLog.id,
+        occurredAt,
+      },
+      db
+    );
+
+    result = {
+      plan: details.plan,
+      task: details.task,
+      dailyLog,
+      transaction,
+    };
+
+    await db.execAsync('COMMIT');
+    transactionOpen = false;
+  } catch (error) {
+    if (transactionOpen) {
+      await rollbackTransaction(db);
+      transactionOpen = false;
+    }
+
+    throw error;
+  } finally {
+    await db.closeAsync();
+  }
+
+  if (!result) {
+    throw new Error('Task plan completion did not produce a result.');
   }
 
   return result;

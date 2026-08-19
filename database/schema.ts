@@ -17,6 +17,8 @@ export const createTasksTable = `
     category_id TEXT NOT NULL,
 
     coin_reward INTEGER NOT NULL,
+    coins_per_hour INTEGER NOT NULL
+      CHECK (coins_per_hour > 0),
     estimated_duration_minutes INTEGER,
 
     created_at TEXT NOT NULL,
@@ -108,6 +110,8 @@ export const createDailyTaskPlansTable = `
     category_id TEXT NOT NULL,
     planned_duration_minutes INTEGER NOT NULL
       CHECK (planned_duration_minutes > 0),
+    planned_coin_amount INTEGER NOT NULL
+      CHECK (planned_coin_amount > 0),
     priority TEXT NOT NULL
       CHECK (priority IN ('NORMAL', 'IMPORTANT', 'URGENT')),
     created_at TEXT NOT NULL,
@@ -158,6 +162,22 @@ export const createTaskCategoryIntegrityTriggers = `
   END;
 `;
 
+export const createTaskCoinRateIntegrityTriggers = `
+  CREATE TRIGGER IF NOT EXISTS tasks_coins_per_hour_required_on_insert
+  BEFORE INSERT ON tasks
+  WHEN NEW.coins_per_hour IS NULL OR NEW.coins_per_hour <= 0
+  BEGIN
+    SELECT RAISE(ABORT, 'tasks.coins_per_hour must be greater than 0');
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS tasks_coins_per_hour_required_on_update
+  BEFORE UPDATE OF coins_per_hour ON tasks
+  WHEN NEW.coins_per_hour IS NULL OR NEW.coins_per_hour <= 0
+  BEGIN
+    SELECT RAISE(ABORT, 'tasks.coins_per_hour must be greater than 0');
+  END;
+`;
+
 export const createDailyTaskPlanCategoryIntegrityTriggers = `
   CREATE TRIGGER IF NOT EXISTS daily_task_plans_category_id_required_on_insert
   BEFORE INSERT ON daily_task_plans
@@ -171,6 +191,22 @@ export const createDailyTaskPlanCategoryIntegrityTriggers = `
   WHEN NEW.category_id IS NULL
   BEGIN
     SELECT RAISE(ABORT, 'daily_task_plans.category_id must not be null');
+  END;
+`;
+
+export const createDailyTaskPlanCoinIntegrityTriggers = `
+  CREATE TRIGGER IF NOT EXISTS daily_task_plans_planned_coin_amount_required_on_insert
+  BEFORE INSERT ON daily_task_plans
+  WHEN NEW.planned_coin_amount IS NULL OR NEW.planned_coin_amount <= 0
+  BEGIN
+    SELECT RAISE(ABORT, 'daily_task_plans.planned_coin_amount must be greater than 0');
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS daily_task_plans_planned_coin_amount_required_on_update
+  BEFORE UPDATE OF planned_coin_amount ON daily_task_plans
+  WHEN NEW.planned_coin_amount IS NULL OR NEW.planned_coin_amount <= 0
+  BEGIN
+    SELECT RAISE(ABORT, 'daily_task_plans.planned_coin_amount must be greater than 0');
   END;
 `;
 

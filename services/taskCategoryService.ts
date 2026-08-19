@@ -1,7 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { initDatabase } from '@/database/database';
-import { OTHER_TASK_CATEGORY_ID } from '@/database/defaultTaskCategories';
 import type { TaskCategory } from '@/models/types';
 
 type TaskCategoryRow = {
@@ -77,7 +76,7 @@ export async function getActiveTaskCategories(): Promise<TaskCategory[]> {
     `SELECT *
      FROM task_categories
      WHERE archived_at IS NULL
-     ORDER BY is_system DESC, name COLLATE NOCASE ASC`
+     ORDER BY name COLLATE NOCASE ASC`
   );
 
   return rows.map(mapTaskCategoryRow);
@@ -154,10 +153,6 @@ export async function updateTaskCategory(
     throw new Error('Archived Task categories cannot be updated.');
   }
 
-  if (existingCategory.id === OTHER_TASK_CATEGORY_ID) {
-    throw new Error('The default Other Task category cannot be updated.');
-  }
-
   const name = validateName(input.name);
   await assertNameIsAvailable(name, db, existingCategory.id);
 
@@ -187,10 +182,6 @@ export async function archiveTaskCategory(id: string): Promise<TaskCategory | nu
 
   if (existingCategory.archivedAt !== null) {
     return existingCategory;
-  }
-
-  if (existingCategory.id === OTHER_TASK_CATEGORY_ID) {
-    throw new Error('The default Other Task category cannot be archived.');
   }
 
   const archivedAt = new Date().toISOString();

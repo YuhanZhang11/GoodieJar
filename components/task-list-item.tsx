@@ -1,5 +1,5 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 
 import { SwipeableRow } from '@/components/swipeable-row';
@@ -9,9 +9,9 @@ import type { Task } from '@/models/types';
 
 type TaskListItemProps = {
   task: Task;
+  categoryName: string;
   isDisabled: boolean;
-  isCompleting: boolean;
-  onComplete: (task: Task) => void;
+  onSelect: (task: Task) => void;
   onEdit: (task: Task) => void;
   onDelete: (task: Task) => void;
   onSwipeOpen: (methods: SwipeableMethods) => void;
@@ -20,9 +20,9 @@ type TaskListItemProps = {
 
 export function TaskListItem({
   task,
+  categoryName,
   isDisabled,
-  isCompleting,
-  onComplete,
+  onSelect,
   onEdit,
   onDelete,
   onSwipeOpen,
@@ -30,13 +30,6 @@ export function TaskListItem({
 }: TaskListItemProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const description = task.description.trim();
-  const metadata = [
-    task.estimatedDurationMinutes === null ? null : `${task.estimatedDurationMinutes} min`,
-    description || null,
-  ]
-    .filter((value): value is string => value !== null)
-    .join(' \u00B7 ');
 
   return (
     <SwipeableRow
@@ -45,104 +38,56 @@ export function TaskListItem({
       onDelete={() => onDelete(task)}
       onEdit={() => onEdit(task)}
       onOpen={onSwipeOpen}>
-      <View style={[styles.container, { borderBottomColor: colors.border }]}>
-        <View style={styles.primaryRow}>
+      <Pressable
+        accessibilityLabel={`Add ${task.name} to Today, category ${categoryName}`}
+        accessibilityRole="button"
+        disabled={isDisabled}
+        onPress={() => onSelect(task)}
+        style={({ pressed }) => [
+          styles.container,
+          {
+            borderBottomColor: colors.border,
+            opacity: pressed || isDisabled ? 0.62 : 1,
+          },
+        ]}>
+        <View style={styles.textBlock}>
           <Text ellipsizeMode="tail" numberOfLines={1} style={[styles.name, { color: colors.text }]}>
             {task.name}
           </Text>
-
-          <View style={[styles.reward, { backgroundColor: colors.surfaceMuted }]}>
-            <MaterialIcons name="monetization-on" size={17} color={colors.coin} />
-            <Text style={[styles.rewardText, { color: colors.coinDeep }]}>+{task.coinReward}</Text>
-          </View>
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Complete ${task.name}`}
-            disabled={isDisabled}
-            onPress={() => onComplete(task)}
-            style={({ pressed }) => [
-              styles.doneButton,
-              {
-                backgroundColor: colors.primary,
-                opacity: pressed || isDisabled ? 0.7 : 1,
-              },
-            ]}>
-            {isCompleting ? (
-              <ActivityIndicator color={colors.primaryContrast} size="small" />
-            ) : (
-              <>
-                <MaterialIcons name="done" size={17} color={colors.primaryContrast} />
-                <Text style={[styles.doneText, { color: colors.primaryContrast }]}>Done</Text>
-              </>
-            )}
-          </Pressable>
-        </View>
-
-        {metadata ? (
           <Text
             ellipsizeMode="tail"
-            numberOfLines={2}
-            style={[styles.metadata, { color: colors.mutedText }]}>
-            {metadata}
+            numberOfLines={1}
+            style={[styles.category, { color: colors.mutedText }]}>
+            {categoryName}
           </Text>
-        ) : null}
-      </View>
+        </View>
+        <MaterialIcons name="chevron-right" size={24} color={colors.icon} />
+      </Pressable>
     </SwipeableRow>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 6,
-    paddingVertical: 11,
-  },
-  primaryRow: {
     alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     gap: 8,
+    minHeight: 62,
+    paddingVertical: 9,
+  },
+  textBlock: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
   },
   name: {
-    flex: 1,
     fontSize: 16,
     fontWeight: '600',
     lineHeight: 21,
-    minWidth: 0,
   },
-  reward: {
-    alignItems: 'center',
-    borderRadius: 8,
-    flexDirection: 'row',
-    flexShrink: 0,
-    gap: 2,
-    minHeight: 30,
-    paddingHorizontal: 8,
-  },
-  rewardText: {
+  category: {
     fontSize: 13,
-    fontWeight: '700',
     lineHeight: 18,
-  },
-  doneButton: {
-    alignItems: 'center',
-    borderRadius: 8,
-    flexDirection: 'row',
-    flexShrink: 0,
-    gap: 3,
-    justifyContent: 'center',
-    minHeight: 40,
-    minWidth: 76,
-    paddingHorizontal: 10,
-  },
-  doneText: {
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 18,
-  },
-  metadata: {
-    fontSize: 12,
-    lineHeight: 18,
-    paddingRight: 4,
   },
 });

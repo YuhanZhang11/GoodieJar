@@ -4,11 +4,13 @@ import { DEFAULT_TASK_CATEGORIES, OTHER_TASK_CATEGORY_ID } from './defaultTaskCa
 import {
   createAllIndexes,
   createAllTables,
+  createDailyTaskPlanCoinIntegrityTriggers,
   createDailyTaskPlanCategoryIntegrityTriggers,
+  createTaskCoinRateIntegrityTriggers,
   createTaskCategoryIntegrityTriggers,
 } from './schema';
 
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 3;
 
 type UserVersionRow = {
   user_version: number;
@@ -103,9 +105,74 @@ async function migrateDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
       }
     }
 
+    if (currentVersion < 3) {
+      const taskColumns = await db.getAllAsync<TableColumnRow>('PRAGMA table_info(tasks)');
+      const hasCoinsPerHour = taskColumns.some((column) => column.name === 'coins_per_hour');
+
+      if (!hasCoinsPerHour) {
+        await db.execAsync(
+          'ALTER TABLE tasks ADD COLUMN coins_per_hour INTEGER CHECK (coins_per_hour > 0)'
+        );
+      }
+
+      await db.execAsync(`
+        UPDATE tasks
+        SET coins_per_hour = coin_reward
+        WHERE coins_per_hour IS NULL
+      `);
+
+      const missingTaskRateRow = await db.getFirstAsync<CountRow>(
+        'SELECT COUNT(*) AS count FROM tasks WHERE coins_per_hour IS NULL OR coins_per_hour <= 0'
+      );
+
+      if ((missingTaskRateRow?.count ?? 0) > 0) {
+        throw new Error('Task coins-per-hour backfill did not complete.');
+      }
+
+      const planColumns = await db.getAllAsync<TableColumnRow>(
+        'PRAGMA table_info(daily_task_plans)'
+      );
+      const hasPlannedCoinAmount = planColumns.some(
+        (column) => column.name === 'planned_coin_amount'
+      );
+
+      if (!hasPlannedCoinAmount) {
+        await db.execAsync(
+          `ALTER TABLE daily_task_plans
+           ADD COLUMN planned_coin_amount INTEGER CHECK (planned_coin_amount > 0)`
+        );
+      }
+
+      await db.execAsync(`
+        UPDATE daily_task_plans
+        SET planned_coin_amount = (
+          SELECT CAST(
+            (
+              tasks.coins_per_hour * daily_task_plans.planned_duration_minutes + 59
+            ) / 60 AS INTEGER
+          )
+          FROM tasks
+          WHERE tasks.id = daily_task_plans.task_id
+        )
+        WHERE planned_coin_amount IS NULL
+      `);
+
+      const missingPlanCoinRow = await db.getFirstAsync<CountRow>(
+        `SELECT COUNT(*) AS count
+         FROM daily_task_plans
+         WHERE planned_coin_amount IS NULL OR planned_coin_amount <= 0`
+      );
+
+      if ((missingPlanCoinRow?.count ?? 0) > 0) {
+        throw new Error('DailyTaskPlan planned-coin backfill did not complete.');
+      }
+    }
+
     await db.execAsync(createAllIndexes);
     await db.execAsync(createTaskCategoryIntegrityTriggers);
+    await db.execAsync(createTaskCoinRateIntegrityTriggers);
     await db.execAsync(createDailyTaskPlanCategoryIntegrityTriggers);
+    await db.execAsync(createDailyTaskPlanCoinIntegrityTriggers);
 
     if (currentVersion < DATABASE_VERSION) {
       await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);

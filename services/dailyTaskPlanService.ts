@@ -12,12 +12,13 @@ type TaskPlanDetailsRow = {
   plan_daily_log_id: string;
   plan_category_id: string;
   planned_duration_minutes: number;
+  planned_coin_amount: number;
   priority: TaskPriority;
   plan_created_at: string;
   task_name: string;
   task_description: string;
   task_category_id: string;
-  task_coin_reward: number;
+  task_coins_per_hour: number;
   task_estimated_duration_minutes: number | null;
   task_created_at: string;
   task_archived_at: string | null;
@@ -36,6 +37,7 @@ export type AddTaskToDateInput = {
   taskId: string;
   date: string;
   plannedDurationMinutes: number;
+  plannedCoinAmount?: number;
   priority: TaskPriority;
 };
 
@@ -52,12 +54,13 @@ const TASK_PLAN_DETAILS_SELECT = `
     plan.daily_log_id AS plan_daily_log_id,
     plan.category_id AS plan_category_id,
     plan.planned_duration_minutes,
+    plan.planned_coin_amount,
     plan.priority,
     plan.created_at AS plan_created_at,
     task.name AS task_name,
     task.description AS task_description,
     task.category_id AS task_category_id,
-    task.coin_reward AS task_coin_reward,
+    task.coins_per_hour AS task_coins_per_hour,
     task.estimated_duration_minutes AS task_estimated_duration_minutes,
     task.created_at AS task_created_at,
     task.archived_at AS task_archived_at,
@@ -78,6 +81,7 @@ function mapTaskPlanDetailsRow(row: TaskPlanDetailsRow): TaskPlanDetails {
       dailyLogId: row.plan_daily_log_id,
       categoryId: row.plan_category_id,
       plannedDurationMinutes: row.planned_duration_minutes,
+      plannedCoinAmount: row.planned_coin_amount,
       priority: row.priority,
       createdAt: row.plan_created_at,
     },
@@ -86,7 +90,7 @@ function mapTaskPlanDetailsRow(row: TaskPlanDetailsRow): TaskPlanDetails {
       name: row.task_name,
       description: row.task_description,
       categoryId: row.task_category_id,
-      coinReward: row.task_coin_reward,
+      coinsPerHour: row.task_coins_per_hour,
       estimatedDurationMinutes: row.task_estimated_duration_minutes,
       createdAt: row.task_created_at,
       archivedAt: row.task_archived_at,
@@ -121,6 +125,27 @@ function validatePlannedDuration(plannedDurationMinutes: number): number {
   }
 
   return plannedDurationMinutes;
+}
+
+function validatePlannedCoinAmount(plannedCoinAmount: number): number {
+  if (!Number.isInteger(plannedCoinAmount) || plannedCoinAmount <= 0) {
+    throw new Error('DailyTaskPlan plannedCoinAmount must be an integer greater than 0.');
+  }
+
+  return plannedCoinAmount;
+}
+
+export function calculateSuggestedTaskCoins(
+  coinsPerHour: number,
+  plannedDurationMinutes: number
+): number {
+  if (!Number.isInteger(coinsPerHour) || coinsPerHour <= 0) {
+    throw new Error('Task coinsPerHour must be an integer greater than 0.');
+  }
+
+  const validDuration = validatePlannedDuration(plannedDurationMinutes);
+
+  return Math.ceil((coinsPerHour * validDuration) / 60);
 }
 
 function validatePriority(priority: TaskPriority): TaskPriority {
@@ -177,6 +202,11 @@ export async function addTaskToDate(input: AddTaskToDateInput): Promise<TaskPlan
         throw new Error(`Task with id "${taskId}" is archived and cannot be planned.`);
       }
 
+      const plannedCoinAmount = validatePlannedCoinAmount(
+        input.plannedCoinAmount ??
+          calculateSuggestedTaskCoins(task.coinsPerHour, plannedDurationMinutes)
+      );
+
       const dailyLog = await getOrCreateDailyLog(date, db);
       const planId = createId();
       const createdAt = new Date().toISOString();
@@ -187,15 +217,17 @@ export async function addTaskToDate(input: AddTaskToDateInput): Promise<TaskPlan
           daily_log_id,
           category_id,
           planned_duration_minutes,
+          planned_coin_amount,
           priority,
           created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           planId,
           task.id,
           dailyLog.id,
           task.categoryId,
           plannedDurationMinutes,
+          plannedCoinAmount,
           priority,
           createdAt,
         ]

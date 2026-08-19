@@ -12,7 +12,7 @@ export interface Task {
   description: string;
   categoryId: string;
 
-  coinReward: number;
+  coinsPerHour: number;
   estimatedDurationMinutes: number | null;
 
   createdAt: string;
@@ -46,6 +46,7 @@ export interface DailyTaskPlan {
   dailyLogId: string;
   categoryId: string;
   plannedDurationMinutes: number;
+  plannedCoinAmount: number;
   priority: TaskPriority;
   createdAt: string;
 }
