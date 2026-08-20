@@ -56,6 +56,26 @@ export interface DailyTaskPlan {
   createdAt: string;
 }
 
+export interface TaskSession {
+  id: string;
+  taskPlanId: string;
+
+  startedAt: string;
+  activeStartedAt: string | null;
+  accumulatedSeconds: number;
+  endedAt: string | null;
+
+  goalDurationSecondsSnapshot: number;
+  coinsPerHourSnapshot: number;
+  isFocusedSnapshot: boolean;
+  suggestedRawCoinAmountSnapshot: number;
+  suggestedCoinAmountSnapshot: number;
+  plannedCoinAmountSnapshot: number;
+
+  coinTransactionId: string | null;
+  createdAt: string;
+}
+
 export type TransactionType = 'EARN' | 'SPEND';
 
 export interface CoinTransaction {

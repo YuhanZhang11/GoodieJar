@@ -10,9 +10,10 @@ import {
   createTaskCoinRateIntegrityTriggers,
   createTaskCategoryIntegrityTriggers,
   createTaskFocusIntegrityTriggers,
+  createTaskSessionsTable,
 } from './schema';
 
-const DATABASE_VERSION = 4;
+const DATABASE_VERSION = 5;
 
 type UserVersionRow = {
   user_version: number;
@@ -286,6 +287,10 @@ async function migrateDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
       if ((invalidPlanSnapshotRow?.count ?? 0) > 0) {
         throw new Error('DailyTaskPlan reward-snapshot backfill did not complete.');
       }
+    }
+
+    if (currentVersion < 5) {
+      await db.execAsync(createTaskSessionsTable);
     }
 
     await db.execAsync(createAllIndexes);

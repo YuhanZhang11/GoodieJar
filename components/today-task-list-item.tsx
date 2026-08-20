@@ -5,13 +5,16 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { TaskPriority } from '@/models/types';
 import type { TaskPlanDetails } from '@/services/dailyTaskPlanService';
+import type { TaskSessionState } from '@/utils/taskSession';
 
 type TodayTaskListItemProps = {
   details: TaskPlanDetails;
-  isCompleting: boolean;
+  sessionState: TaskSessionState | null;
+  isStarting: boolean;
   isRemoving: boolean;
   isDisabled: boolean;
-  onComplete: (details: TaskPlanDetails) => void;
+  onOpen: (details: TaskPlanDetails) => void;
+  onStart: (details: TaskPlanDetails) => void;
   onRemove: (details: TaskPlanDetails) => void;
 };
 
@@ -38,38 +41,53 @@ function formatDuration(minutes: number): string {
 
 export function TodayTaskListItem({
   details,
-  isCompleting,
+  sessionState,
+  isStarting,
   isRemoving,
   isDisabled,
-  onComplete,
+  onOpen,
+  onStart,
   onRemove,
 }: TodayTaskListItemProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const { plan, task, category } = details;
+  const hasOpenSession = sessionState === 'RUNNING' || sessionState === 'PAUSED';
+  const sessionLabel = sessionState === 'RUNNING' ? 'Focus in progress' : 'Paused';
 
   return (
     <View style={[styles.container, { borderBottomColor: colors.border }]}>
       <View style={styles.primaryRow}>
-        <Text ellipsizeMode="tail" numberOfLines={1} style={[styles.name, { color: colors.text }]}>
-          {task.name}
-        </Text>
+        <View style={styles.nameGroup}>
+          <Text ellipsizeMode="tail" numberOfLines={1} style={[styles.name, { color: colors.text }]}>
+            {task.name}
+          </Text>
+          {hasOpenSession ? (
+            <Text style={[styles.sessionState, { color: colors.primary }]}>{sessionLabel}</Text>
+          ) : null}
+        </View>
 
         <Pressable
-          accessibilityLabel={`Complete ${task.name}`}
+          accessibilityLabel={hasOpenSession ? `Open ${task.name} focus session` : `Start ${task.name}`}
           accessibilityRole="button"
           disabled={isDisabled}
-          onPress={() => onComplete(details)}
+          onPress={() => (hasOpenSession ? onOpen(details) : onStart(details))}
           style={({ pressed }) => [
-            styles.doneButton,
+            styles.sessionButton,
             { backgroundColor: colors.primary, opacity: pressed || isDisabled ? 0.62 : 1 },
           ]}>
-          {isCompleting ? (
+          {isStarting ? (
             <ActivityIndicator color={colors.primaryContrast} size="small" />
           ) : (
             <>
-              <MaterialIcons name="done" size={17} color={colors.primaryContrast} />
-              <Text style={[styles.doneText, { color: colors.primaryContrast }]}>Done</Text>
+              <MaterialIcons
+                name={hasOpenSession ? 'open-in-new' : 'play-arrow'}
+                size={17}
+                color={colors.primaryContrast}
+              />
+              <Text style={[styles.sessionButtonText, { color: colors.primaryContrast }]}>
+                {hasOpenSession ? 'Open' : 'Start'}
+              </Text>
             </>
           )}
         </Pressable>
@@ -90,9 +108,12 @@ export function TodayTaskListItem({
         <Pressable
           accessibilityLabel={`Remove ${task.name} from Today`}
           accessibilityRole="button"
-          disabled={isDisabled}
+          disabled={isDisabled || hasOpenSession}
           onPress={() => onRemove(details)}
-          style={({ pressed }) => [styles.removeButton, { opacity: pressed || isDisabled ? 0.55 : 1 }]}>
+          style={({ pressed }) => [
+            styles.removeButton,
+            { opacity: pressed || isDisabled || hasOpenSession ? 0.45 : 1 },
+          ]}>
           {isRemoving ? (
             <ActivityIndicator color={colors.mutedText} size="small" />
           ) : (
@@ -115,13 +136,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
+  nameGroup: { flex: 1, minWidth: 0 },
   name: {
-    flex: 1,
     fontSize: 16,
     fontWeight: '600',
     lineHeight: 21,
     minWidth: 0,
   },
+  sessionState: { fontSize: 12, fontWeight: '600', lineHeight: 17 },
   reward: {
     alignItems: 'center',
     borderRadius: 8,
@@ -136,7 +158,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 18,
   },
-  doneButton: {
+  sessionButton: {
     alignItems: 'center',
     borderRadius: 8,
     flexDirection: 'row',
@@ -147,7 +169,7 @@ const styles = StyleSheet.create({
     minWidth: 76,
     paddingHorizontal: 10,
   },
-  doneText: {
+  sessionButtonText: {
     fontSize: 13,
     fontWeight: '700',
     lineHeight: 18,

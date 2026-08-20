@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { JarPage } from '@/components/jar-page';
+import { TaskFocusSessionModal } from '@/components/task-focus-session-modal';
 import { TaskFormModal, type TaskTemplateFormInput } from '@/components/task-form-modal';
 import { TaskLibraryModal } from '@/components/task-library-modal';
 import { TaskPlanModal, type AddTaskPlanFormInput } from '@/components/task-plan-modal';
@@ -24,9 +25,17 @@ import {
   removeTaskPlan,
   type TaskPlanDetails,
 } from '@/services/dailyTaskPlanService';
-import { completeTaskPlan } from '@/services/taskCompletionService';
 import { archiveTask, createTask, getActiveTasks, updateTask } from '@/services/taskService';
+import {
+  getOpenTaskSession,
+  pauseTaskSession,
+  resumeTaskSession,
+  startTaskSession,
+  stopTaskSession,
+  type TaskSessionDetails,
+} from '@/services/taskSessionService';
 import { getLocalDateKey } from '@/utils/localDate';
+import { getTaskSessionState } from '@/utils/taskSession';
 
 type LoadState = 'loading' | 'loaded' | 'error';
 type TaskFormState = { mode: 'add' } | { mode: 'edit'; task: Task };
@@ -49,13 +58,17 @@ export default function TasksScreen() {
   const [libraryLoadState, setLibraryLoadState] = useState<LoadState>('loading');
   const [taskFormState, setTaskFormState] = useState<TaskFormState | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [completingPlanId, setCompletingPlanId] = useState<string | null>(null);
+  const [openSession, setOpenSession] = useState<TaskSessionDetails | null>(null);
+  const [focusModalVisible, setFocusModalVisible] = useState(false);
+  const [startingPlanId, setStartingPlanId] = useState<string | null>(null);
+  const [isSessionMutating, setIsSessionMutating] = useState(false);
   const [removingPlanId, setRemovingPlanId] = useState<string | null>(null);
   const [archivingTaskId, setArchivingTaskId] = useState<string | null>(null);
   const [balanceRefreshToken, setBalanceRefreshToken] = useState(0);
   const todayLoadRequestIdRef = useRef(0);
   const libraryLoadRequestIdRef = useRef(0);
-  const completingPlanIdRef = useRef<string | null>(null);
+  const startingPlanIdRef = useRef<string | null>(null);
+  const sessionMutationRef = useRef(false);
   const removingPlanIdRef = useRef<string | null>(null);
   const archivingTaskIdRef = useRef<string | null>(null);
   const taskFormExitRef = useRef<TaskFormExit>({ destination: 'library' });
@@ -70,9 +83,10 @@ export default function TasksScreen() {
 
     try {
       const today = getLocalDateKey(new Date());
-      const [todayPlans, todayTransactions] = await Promise.all([
+      const [todayPlans, todayTransactions, persistedOpenSession] = await Promise.all([
         getTaskPlansByDate(today),
         getTransactionsByDate(today),
+        getOpenTaskSession(),
       ]);
       const completedPlanKeys = new Set(
         todayTransactions
@@ -84,11 +98,21 @@ export default function TasksScreen() {
         return;
       }
 
-      setPlans(
-        todayPlans.filter(
-          ({ plan }) => !completedPlanKeys.has(`${plan.dailyLogId}:${plan.taskId}`)
-        )
+      const visiblePlans = todayPlans.filter(
+        ({ plan }) => !completedPlanKeys.has(`${plan.dailyLogId}:${plan.taskId}`)
       );
+
+      if (
+        persistedOpenSession &&
+        !visiblePlans.some(
+          ({ plan }) => plan.id === persistedOpenSession.planDetails.plan.id
+        )
+      ) {
+        visiblePlans.unshift(persistedOpenSession.planDetails);
+      }
+
+      setOpenSession(persistedOpenSession);
+      setPlans(visiblePlans);
       setLoadState('loaded');
     } catch {
       if (requestId === todayLoadRequestIdRef.current) {
@@ -267,31 +291,100 @@ export default function TasksScreen() {
     await loadToday(false);
   }
 
-  async function completeSelectedPlan(details: TaskPlanDetails) {
-    if (completingPlanIdRef.current !== null || removingPlanIdRef.current !== null) {
+  async function startSelectedPlan(details: TaskPlanDetails) {
+    if (
+      startingPlanIdRef.current !== null ||
+      removingPlanIdRef.current !== null ||
+      sessionMutationRef.current
+    ) {
       return;
     }
 
-    completingPlanIdRef.current = details.plan.id;
-    setCompletingPlanId(details.plan.id);
+    startingPlanIdRef.current = details.plan.id;
+    setStartingPlanId(details.plan.id);
 
     try {
-      await completeTaskPlan({ planId: details.plan.id });
+      const sessionDetails = await startTaskSession(details.plan.id);
+      todayLoadRequestIdRef.current += 1;
+      setOpenSession(sessionDetails);
+      setFocusModalVisible(true);
+    } catch (error) {
+      Alert.alert('Could not start focus', getErrorMessage(error));
+      void loadToday(false);
+    } finally {
+      startingPlanIdRef.current = null;
+      setStartingPlanId(null);
+    }
+  }
+
+  function openSelectedSession(details: TaskPlanDetails) {
+    if (openSession?.session.taskPlanId !== details.plan.id) {
+      return;
+    }
+
+    setFocusModalVisible(true);
+  }
+
+  async function mutateOpenSession(
+    mutation: (sessionId: string) => Promise<TaskSessionDetails>,
+    errorTitle: string
+  ) {
+    if (!openSession || sessionMutationRef.current) {
+      return;
+    }
+
+    sessionMutationRef.current = true;
+    setIsSessionMutating(true);
+
+    try {
+      const sessionDetails = await mutation(openSession.session.id);
+      todayLoadRequestIdRef.current += 1;
+      setOpenSession(sessionDetails);
+    } catch (error) {
+      Alert.alert(errorTitle, getErrorMessage(error));
+    } finally {
+      sessionMutationRef.current = false;
+      setIsSessionMutating(false);
+    }
+  }
+
+  async function stopOpenSession() {
+    if (!openSession || sessionMutationRef.current) {
+      return;
+    }
+
+    const completedPlanId = openSession.session.taskPlanId;
+    sessionMutationRef.current = true;
+    setIsSessionMutating(true);
+
+    try {
+      await stopTaskSession(openSession.session.id);
+      setFocusModalVisible(false);
+      setOpenSession(null);
       setPlans((currentPlans) =>
-        currentPlans.filter((currentPlan) => currentPlan.plan.id !== details.plan.id)
+        currentPlans.filter((currentPlan) => currentPlan.plan.id !== completedPlanId)
       );
       setBalanceRefreshToken((currentToken) => currentToken + 1);
       void loadToday(false);
     } catch (error) {
-      Alert.alert('Could not complete task', getErrorMessage(error));
+      Alert.alert('Could not stop focus', getErrorMessage(error));
     } finally {
-      completingPlanIdRef.current = null;
-      setCompletingPlanId(null);
+      sessionMutationRef.current = false;
+      setIsSessionMutating(false);
     }
   }
 
   async function removeSelectedPlan(details: TaskPlanDetails) {
-    if (completingPlanIdRef.current !== null || removingPlanIdRef.current !== null) {
+    if (
+      startingPlanIdRef.current !== null ||
+      removingPlanIdRef.current !== null ||
+      sessionMutationRef.current
+    ) {
+      return;
+    }
+
+    if (openSession?.session.taskPlanId === details.plan.id) {
+      Alert.alert('Focus session is open', 'Stop this focus session before removing the task.');
       return;
     }
 
@@ -427,7 +520,9 @@ export default function TasksScreen() {
       'Archived category'
     : '';
   const defaultCategoryId = categories[0]?.id ?? '';
-  const planMutationInProgress = completingPlanId !== null || removingPlanId !== null;
+  const openSessionState = openSession ? getTaskSessionState(openSession.session) : null;
+  const planMutationInProgress =
+    startingPlanId !== null || removingPlanId !== null || isSessionMutating;
 
   return (
     <JarPage balanceRefreshToken={balanceRefreshToken}>
@@ -459,11 +554,15 @@ export default function TasksScreen() {
         renderItem={({ item }) => (
           <TodayTaskListItem
             details={item}
-            isCompleting={completingPlanId === item.plan.id}
             isDisabled={planMutationInProgress}
             isRemoving={removingPlanId === item.plan.id}
-            onComplete={(details) => void completeSelectedPlan(details)}
+            isStarting={startingPlanId === item.plan.id}
+            onOpen={openSelectedSession}
             onRemove={confirmRemovePlan}
+            onStart={(details) => void startSelectedPlan(details)}
+            sessionState={
+              openSession?.session.taskPlanId === item.plan.id ? openSessionState : null
+            }
           />
         )}
         showsVerticalScrollIndicator={false}
@@ -502,6 +601,24 @@ export default function TasksScreen() {
         onSubmit={addSelectedTaskToToday}
         task={selectedTask}
         visible={selectedTask !== null}
+      />
+
+      <TaskFocusSessionModal
+        details={openSession}
+        isMutating={isSessionMutating}
+        onPause={() =>
+          void mutateOpenSession(pauseTaskSession, 'Could not pause focus')
+        }
+        onRequestClose={() => {
+          if (!sessionMutationRef.current) {
+            setFocusModalVisible(false);
+          }
+        }}
+        onResume={() =>
+          void mutateOpenSession(resumeTaskSession, 'Could not resume focus')
+        }
+        onStop={() => void stopOpenSession()}
+        visible={focusModalVisible}
       />
     </JarPage>
   );

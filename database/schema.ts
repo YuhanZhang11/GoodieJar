@@ -141,6 +141,43 @@ export const createDailyTaskPlansTable = `
   );
 `;
 
+export const createTaskSessionsTable = `
+  CREATE TABLE IF NOT EXISTS task_sessions (
+    id TEXT PRIMARY KEY NOT NULL,
+    task_plan_id TEXT NOT NULL,
+
+    started_at TEXT NOT NULL,
+    active_started_at TEXT,
+    accumulated_seconds REAL NOT NULL
+      CHECK (accumulated_seconds >= 0),
+    ended_at TEXT,
+
+    goal_duration_seconds_snapshot INTEGER NOT NULL
+      CHECK (goal_duration_seconds_snapshot > 0),
+    coins_per_hour_snapshot INTEGER NOT NULL
+      CHECK (coins_per_hour_snapshot > 0),
+    is_focused_snapshot INTEGER NOT NULL
+      CHECK (is_focused_snapshot IN (0, 1)),
+    suggested_raw_coin_amount_snapshot REAL NOT NULL
+      CHECK (suggested_raw_coin_amount_snapshot > 0),
+    suggested_coin_amount_snapshot INTEGER NOT NULL
+      CHECK (suggested_coin_amount_snapshot > 0),
+    planned_coin_amount_snapshot INTEGER NOT NULL
+      CHECK (planned_coin_amount_snapshot > 0),
+
+    coin_transaction_id TEXT,
+    created_at TEXT NOT NULL,
+
+    CHECK (ended_at IS NULL OR active_started_at IS NULL),
+
+    FOREIGN KEY (task_plan_id)
+      REFERENCES daily_task_plans(id),
+
+    FOREIGN KEY (coin_transaction_id)
+      REFERENCES coin_transactions(id)
+  );
+`;
+
 export const createAllIndexes = `
   CREATE UNIQUE INDEX IF NOT EXISTS task_categories_active_name_unique
     ON task_categories (LOWER(TRIM(name)))
@@ -154,6 +191,17 @@ export const createAllIndexes = `
 
   CREATE INDEX IF NOT EXISTS daily_task_plans_category_id_index
     ON daily_task_plans (category_id);
+
+  CREATE UNIQUE INDEX IF NOT EXISTS task_sessions_task_plan_id_unique
+    ON task_sessions (task_plan_id);
+
+  CREATE INDEX IF NOT EXISTS task_sessions_open_lookup_index
+    ON task_sessions (ended_at)
+    WHERE ended_at IS NULL;
+
+  CREATE UNIQUE INDEX IF NOT EXISTS task_sessions_single_open_unique
+    ON task_sessions (1)
+    WHERE ended_at IS NULL;
 `;
 
 export const createTaskCategoryIntegrityTriggers = `
@@ -276,4 +324,5 @@ export const createAllTables = `
   ${createAchievementsTable}
   ${createCoinTransactionsTable}
   ${createDailyTaskPlansTable}
+  ${createTaskSessionsTable}
 `;

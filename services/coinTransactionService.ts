@@ -181,8 +181,11 @@ export async function createTransaction(
   return transaction;
 }
 
-export async function getTransactionById(id: string): Promise<CoinTransaction | null> {
-  const db = await getDatabase();
+export async function getTransactionById(
+  id: string,
+  database?: SQLiteDatabase
+): Promise<CoinTransaction | null> {
+  const db = database ?? (await getDatabase());
   const row = await db.getFirstAsync<CoinTransactionRow>(
     'SELECT * FROM coin_transactions WHERE id = ?',
     [id]
