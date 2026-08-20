@@ -104,8 +104,11 @@ export const createCoinTransactionsTable = `
   );
 `;
 
-export const createDailyTaskPlansTable = `
-  CREATE TABLE IF NOT EXISTS daily_task_plans (
+function createDailyTaskPlansTableSql(
+  tableName: 'daily_task_plans' | 'daily_task_plans_v7_migration'
+): string {
+  return `
+  CREATE TABLE IF NOT EXISTS ${tableName} (
     id TEXT PRIMARY KEY NOT NULL,
     task_id TEXT NOT NULL,
     daily_log_id TEXT NOT NULL,
@@ -126,8 +129,6 @@ export const createDailyTaskPlansTable = `
       CHECK (priority IN ('NORMAL', 'IMPORTANT', 'URGENT')),
     created_at TEXT NOT NULL,
 
-    UNIQUE (daily_log_id, task_id),
-
     FOREIGN KEY (task_id)
       REFERENCES tasks(id)
       ON DELETE CASCADE,
@@ -140,6 +141,13 @@ export const createDailyTaskPlansTable = `
       REFERENCES task_categories(id)
   );
 `;
+}
+
+export const createDailyTaskPlansTable = createDailyTaskPlansTableSql('daily_task_plans');
+
+export const createDailyTaskPlansV7MigrationTable = createDailyTaskPlansTableSql(
+  'daily_task_plans_v7_migration'
+);
 
 export const createTaskSessionsTable = `
   CREATE TABLE IF NOT EXISTS task_sessions (
@@ -151,6 +159,7 @@ export const createTaskSessionsTable = `
     accumulated_seconds REAL NOT NULL
       CHECK (accumulated_seconds >= 0),
     ended_at TEXT,
+    extended_at TEXT,
 
     goal_duration_seconds_snapshot INTEGER NOT NULL
       CHECK (goal_duration_seconds_snapshot > 0),
@@ -166,6 +175,7 @@ export const createTaskSessionsTable = `
       CHECK (planned_coin_amount_snapshot > 0),
 
     coin_transaction_id TEXT,
+    goal_notification_id TEXT,
     created_at TEXT NOT NULL,
 
     CHECK (ended_at IS NULL OR active_started_at IS NULL),
@@ -191,6 +201,9 @@ export const createAllIndexes = `
 
   CREATE INDEX IF NOT EXISTS daily_task_plans_category_id_index
     ON daily_task_plans (category_id);
+
+  CREATE INDEX IF NOT EXISTS daily_task_plans_daily_log_id_index
+    ON daily_task_plans (daily_log_id, created_at, id);
 
   CREATE UNIQUE INDEX IF NOT EXISTS task_sessions_task_plan_id_unique
     ON task_sessions (task_plan_id);

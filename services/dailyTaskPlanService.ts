@@ -34,9 +34,8 @@ type TaskPlanDetailsRow = {
   category_archived_at: string | null;
 };
 
-type TaskPlanIdentityRow = {
-  task_id: string;
-  daily_log_id: string;
+type TaskPlanSessionRow = {
+  ended_at: string | null;
 };
 
 export type AddTaskToDateInput = {
@@ -231,7 +230,7 @@ export async function addTaskToDate(input: AddTaskToDateInput): Promise<TaskPlan
       const planId = createId();
       const createdAt = new Date().toISOString();
       const insertResult = await db.runAsync(
-        `INSERT OR IGNORE INTO daily_task_plans (
+        `INSERT INTO daily_task_plans (
           id,
           task_id,
           daily_log_id,
@@ -261,8 +260,8 @@ export async function addTaskToDate(input: AddTaskToDateInput): Promise<TaskPlan
         ]
       );
 
-      if (insertResult.changes === 0) {
-        throw new Error(`Task "${task.name}" is already planned for ${date}.`);
+      if (insertResult.changes !== 1) {
+        throw new Error('DailyTaskPlan could not be created.');
       }
 
       const createdPlan = await getTaskPlanById(planId, db);
@@ -307,8 +306,8 @@ export async function removeTaskPlan(planId: string): Promise<boolean> {
     await db.execAsync('BEGIN IMMEDIATE');
     transactionOpen = true;
 
-    const plan = await db.getFirstAsync<TaskPlanIdentityRow>(
-      'SELECT task_id, daily_log_id FROM daily_task_plans WHERE id = ?',
+    const plan = await db.getFirstAsync<{ id: string }>(
+      'SELECT id FROM daily_task_plans WHERE id = ?',
       [validPlanId]
     );
 
@@ -318,17 +317,19 @@ export async function removeTaskPlan(planId: string): Promise<boolean> {
       return false;
     }
 
-    const completion = await db.getFirstAsync<{ id: string }>(
-      `SELECT id
-       FROM coin_transactions
-       WHERE type = ?
-         AND task_id = ?
-         AND daily_log_id = ?
+    const session = await db.getFirstAsync<TaskPlanSessionRow>(
+      `SELECT ended_at
+       FROM task_sessions
+       WHERE task_plan_id = ?
        LIMIT 1`,
-      ['EARN', plan.task_id, plan.daily_log_id]
+      [validPlanId]
     );
 
-    if (completion) {
+    if (session?.ended_at === null) {
+      throw new Error('Task plans with an open focus session cannot be removed.');
+    }
+
+    if (session) {
       throw new Error('Completed Task plans cannot be removed.');
     }
 

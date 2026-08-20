@@ -64,6 +64,7 @@ export interface TaskSession {
   activeStartedAt: string | null;
   accumulatedSeconds: number;
   endedAt: string | null;
+  extendedAt: string | null;
 
   goalDurationSecondsSnapshot: number;
   coinsPerHourSnapshot: number;
@@ -73,6 +74,7 @@ export interface TaskSession {
   plannedCoinAmountSnapshot: number;
 
   coinTransactionId: string | null;
+  goalNotificationId: string | null;
   createdAt: string;
 }
 

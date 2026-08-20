@@ -18,7 +18,6 @@ import {
   getActiveTaskCategories,
   updateTaskCategory,
 } from '@/services/taskCategoryService';
-import { getTransactionsByDate } from '@/services/coinTransactionService';
 import {
   addTaskToDate,
   getTaskPlansByDate,
@@ -27,6 +26,8 @@ import {
 } from '@/services/dailyTaskPlanService';
 import { archiveTask, createTask, getActiveTasks, updateTask } from '@/services/taskService';
 import {
+  extendTaskSession,
+  getCompletedTaskPlanIdsByDate,
   getOpenTaskSession,
   pauseTaskSession,
   resumeTaskSession,
@@ -35,7 +36,7 @@ import {
   type TaskSessionDetails,
 } from '@/services/taskSessionService';
 import { getLocalDateKey } from '@/utils/localDate';
-import { getTaskSessionState } from '@/utils/taskSession';
+import { calculateTaskSessionGoalProgress, getTaskSessionState } from '@/utils/taskSession';
 
 type LoadState = 'loading' | 'loaded' | 'error';
 type TaskFormState = { mode: 'add' } | { mode: 'edit'; task: Task };
@@ -83,24 +84,17 @@ export default function TasksScreen() {
 
     try {
       const today = getLocalDateKey(new Date());
-      const [todayPlans, todayTransactions, persistedOpenSession] = await Promise.all([
+      const [todayPlans, completedPlanIds, persistedOpenSession] = await Promise.all([
         getTaskPlansByDate(today),
-        getTransactionsByDate(today),
+        getCompletedTaskPlanIdsByDate(today),
         getOpenTaskSession(),
       ]);
-      const completedPlanKeys = new Set(
-        todayTransactions
-          .filter((transaction) => transaction.type === 'EARN' && transaction.taskId !== null)
-          .map((transaction) => `${transaction.dailyLogId}:${transaction.taskId}`)
-      );
 
       if (requestId !== todayLoadRequestIdRef.current) {
         return;
       }
 
-      const visiblePlans = todayPlans.filter(
-        ({ plan }) => !completedPlanKeys.has(`${plan.dailyLogId}:${plan.taskId}`)
-      );
+      const visiblePlans = todayPlans.filter(({ plan }) => !completedPlanIds.has(plan.id));
 
       if (
         persistedOpenSession &&
@@ -272,21 +266,13 @@ export default function TasksScreen() {
       throw new Error('Select a Task first.');
     }
 
-    try {
-      await addTaskToDate({
-        taskId: selectedTask.id,
-        date: getLocalDateKey(new Date()),
-        plannedDurationMinutes: input.plannedDurationMinutes,
-        plannedCoinAmount: input.plannedCoinAmount,
-        priority: input.priority,
-      });
-    } catch (error) {
-      if (error instanceof Error && /already planned/i.test(error.message)) {
-        throw new Error('This task is already in Today.');
-      }
-
-      throw error;
-    }
+    await addTaskToDate({
+      taskId: selectedTask.id,
+      date: getLocalDateKey(new Date()),
+      plannedDurationMinutes: input.plannedDurationMinutes,
+      plannedCoinAmount: input.plannedCoinAmount,
+      priority: input.priority,
+    });
 
     await loadToday(false);
   }
@@ -521,6 +507,9 @@ export default function TasksScreen() {
     : '';
   const defaultCategoryId = categories[0]?.id ?? '';
   const openSessionState = openSession ? getTaskSessionState(openSession.session) : null;
+  const openSessionGoalProgress = openSession
+    ? calculateTaskSessionGoalProgress(openSession.session)
+    : null;
   const planMutationInProgress =
     startingPlanId !== null || removingPlanId !== null || isSessionMutating;
 
@@ -554,7 +543,16 @@ export default function TasksScreen() {
         renderItem={({ item }) => (
           <TodayTaskListItem
             details={item}
+            goalReached={
+              openSession?.session.taskPlanId === item.plan.id
+                ? (openSessionGoalProgress?.goalReached ?? false)
+                : false
+            }
             isDisabled={planMutationInProgress}
+            isExtended={
+              openSession?.session.taskPlanId === item.plan.id &&
+              openSession.session.extendedAt !== null
+            }
             isRemoving={removingPlanId === item.plan.id}
             isStarting={startingPlanId === item.plan.id}
             onOpen={openSelectedSession}
@@ -606,6 +604,9 @@ export default function TasksScreen() {
       <TaskFocusSessionModal
         details={openSession}
         isMutating={isSessionMutating}
+        onExtend={() =>
+          void mutateOpenSession(extendTaskSession, 'Could not extend focus')
+        }
         onPause={() =>
           void mutateOpenSession(pauseTaskSession, 'Could not pause focus')
         }

@@ -7,6 +7,7 @@ import 'react-native-reanimated';
 
 import { initDatabase } from '@/database/database';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { configureFocusGoalNotifications } from '@/services/taskSessionNotificationService';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -23,6 +24,12 @@ export default function RootLayout() {
       .catch((error) => {
         console.error('Database initialization failed:', error);
       });
+  }, []);
+
+  useEffect(() => {
+    const notificationSubscription = configureFocusGoalNotifications();
+
+    return () => notificationSubscription.remove();
   }, []);
 
   return (

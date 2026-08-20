@@ -7,13 +7,14 @@ import {
   createDailyTaskPlanCoinIntegrityTriggers,
   createDailyTaskPlanCategoryIntegrityTriggers,
   createDailyTaskPlanRewardSnapshotIntegrityTriggers,
+  createDailyTaskPlansV7MigrationTable,
   createTaskCoinRateIntegrityTriggers,
   createTaskCategoryIntegrityTriggers,
   createTaskFocusIntegrityTriggers,
   createTaskSessionsTable,
 } from './schema';
 
-const DATABASE_VERSION = 5;
+const DATABASE_VERSION = 7;
 
 type UserVersionRow = {
   user_version: number;
@@ -25,6 +26,17 @@ type TableColumnRow = {
 
 type CountRow = {
   count: number;
+};
+
+type TableDefinitionRow = {
+  sql: string | null;
+};
+
+type ForeignKeyViolationRow = {
+  table: string;
+  rowid: number | null;
+  parent: string;
+  fkid: number;
 };
 
 let databaseSetupPromise: Promise<void> | null = null;
@@ -47,17 +59,27 @@ async function seedDefaultTaskCategories(db: SQLite.SQLiteDatabase): Promise<voi
 }
 
 async function migrateDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
-  await db.execAsync('BEGIN IMMEDIATE');
+  const versionRow = await db.getFirstAsync<UserVersionRow>('PRAGMA user_version');
+  const currentVersion = versionRow?.user_version ?? 0;
+
+  if (currentVersion > DATABASE_VERSION) {
+    throw new Error(
+      `Database version ${currentVersion} is newer than supported version ${DATABASE_VERSION}.`
+    );
+  }
+
+  const requiresPlanTableRebuild = currentVersion < 7;
+  let transactionOpen = false;
+
+  // SQLite requires foreign-key enforcement to be disabled before the transaction
+  // that replaces a referenced parent table. Integrity is checked before commit.
+  if (requiresPlanTableRebuild) {
+    await db.execAsync('PRAGMA foreign_keys = OFF');
+  }
 
   try {
-    const versionRow = await db.getFirstAsync<UserVersionRow>('PRAGMA user_version');
-    const currentVersion = versionRow?.user_version ?? 0;
-
-    if (currentVersion > DATABASE_VERSION) {
-      throw new Error(
-        `Database version ${currentVersion} is newer than supported version ${DATABASE_VERSION}.`
-      );
-    }
+    await db.execAsync('BEGIN IMMEDIATE');
+    transactionOpen = true;
 
     await db.execAsync(createAllTables);
     await seedDefaultTaskCategories(db);
@@ -293,6 +315,156 @@ async function migrateDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
       await db.execAsync(createTaskSessionsTable);
     }
 
+    if (currentVersion < 6) {
+      const sessionColumns = await db.getAllAsync<TableColumnRow>(
+        'PRAGMA table_info(task_sessions)'
+      );
+      const hasExtendedAt = sessionColumns.some((column) => column.name === 'extended_at');
+      const hasGoalNotificationId = sessionColumns.some(
+        (column) => column.name === 'goal_notification_id'
+      );
+
+      if (!hasExtendedAt) {
+        await db.execAsync('ALTER TABLE task_sessions ADD COLUMN extended_at TEXT');
+      }
+
+      if (!hasGoalNotificationId) {
+        await db.execAsync('ALTER TABLE task_sessions ADD COLUMN goal_notification_id TEXT');
+      }
+    }
+
+    if (currentVersion < 7) {
+      const planTable = await db.getFirstAsync<TableDefinitionRow>(
+        `SELECT sql
+         FROM sqlite_master
+         WHERE type = 'table' AND name = 'daily_task_plans'`
+      );
+      const hasLegacyTaskDateUniqueness = Boolean(
+        planTable?.sql &&
+          /UNIQUE\s*\(\s*daily_log_id\s*,\s*task_id\s*\)/i.test(planTable.sql)
+      );
+
+      if (hasLegacyTaskDateUniqueness) {
+        const temporaryTable = await db.getFirstAsync<{ name: string }>(
+          `SELECT name
+           FROM sqlite_master
+           WHERE type = 'table' AND name = 'daily_task_plans_v7_migration'`
+        );
+
+        if (temporaryTable) {
+          throw new Error('DailyTaskPlan v7 migration table already exists.');
+        }
+
+        const beforeCountRow = await db.getFirstAsync<CountRow>(
+          'SELECT COUNT(*) AS count FROM daily_task_plans'
+        );
+
+        await db.execAsync(createDailyTaskPlansV7MigrationTable);
+        await db.execAsync(`
+          INSERT INTO daily_task_plans_v7_migration (
+            id,
+            task_id,
+            daily_log_id,
+            category_id,
+            planned_duration_minutes,
+            planned_coin_amount,
+            coins_per_hour_snapshot,
+            is_focused_snapshot,
+            suggested_raw_coin_amount,
+            suggested_coin_amount,
+            priority,
+            created_at
+          )
+          SELECT
+            id,
+            task_id,
+            daily_log_id,
+            category_id,
+            planned_duration_minutes,
+            planned_coin_amount,
+            coins_per_hour_snapshot,
+            is_focused_snapshot,
+            suggested_raw_coin_amount,
+            suggested_coin_amount,
+            priority,
+            created_at
+          FROM daily_task_plans
+        `);
+
+        const afterCountRow = await db.getFirstAsync<CountRow>(
+          'SELECT COUNT(*) AS count FROM daily_task_plans_v7_migration'
+        );
+
+        if ((beforeCountRow?.count ?? 0) !== (afterCountRow?.count ?? 0)) {
+          throw new Error('DailyTaskPlan v7 migration did not preserve every plan.');
+        }
+
+        await db.execAsync('DROP TABLE daily_task_plans');
+        await db.execAsync(
+          'ALTER TABLE daily_task_plans_v7_migration RENAME TO daily_task_plans'
+        );
+      }
+
+      // Before v5, completed plans were identified by their sole task/date EARN.
+      // Link those legacy completions to their plan before duplicate entries are allowed.
+      await db.execAsync(`
+        INSERT INTO task_sessions (
+          id,
+          task_plan_id,
+          started_at,
+          active_started_at,
+          accumulated_seconds,
+          ended_at,
+          extended_at,
+          goal_duration_seconds_snapshot,
+          coins_per_hour_snapshot,
+          is_focused_snapshot,
+          suggested_raw_coin_amount_snapshot,
+          suggested_coin_amount_snapshot,
+          planned_coin_amount_snapshot,
+          coin_transaction_id,
+          goal_notification_id,
+          created_at
+        )
+        SELECT
+          'task_session_v7_' || plan.id,
+          plan.id,
+          completion.occurred_at,
+          NULL,
+          CASE
+            WHEN completion.actual_duration_minutes IS NOT NULL
+              AND completion.actual_duration_minutes > 0
+            THEN completion.actual_duration_minutes * 60
+            ELSE plan.planned_duration_minutes * 60
+          END,
+          completion.occurred_at,
+          NULL,
+          plan.planned_duration_minutes * 60,
+          plan.coins_per_hour_snapshot,
+          plan.is_focused_snapshot,
+          plan.suggested_raw_coin_amount,
+          plan.suggested_coin_amount,
+          plan.planned_coin_amount,
+          completion.id,
+          NULL,
+          completion.occurred_at
+        FROM daily_task_plans AS plan
+        INNER JOIN coin_transactions AS completion
+          ON completion.id = (
+            SELECT candidate.id
+            FROM coin_transactions AS candidate
+            WHERE candidate.type = 'EARN'
+              AND candidate.task_id = plan.task_id
+              AND candidate.daily_log_id = plan.daily_log_id
+            ORDER BY candidate.occurred_at ASC, candidate.id ASC
+            LIMIT 1
+          )
+        LEFT JOIN task_sessions AS existing_session
+          ON existing_session.task_plan_id = plan.id
+        WHERE existing_session.id IS NULL
+      `);
+    }
+
     await db.execAsync(createAllIndexes);
     await db.execAsync(createTaskCategoryIntegrityTriggers);
     await db.execAsync(createTaskCoinRateIntegrityTriggers);
@@ -301,14 +473,33 @@ async function migrateDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
     await db.execAsync(createDailyTaskPlanCoinIntegrityTriggers);
     await db.execAsync(createDailyTaskPlanRewardSnapshotIntegrityTriggers);
 
+    const foreignKeyViolations = await db.getAllAsync<ForeignKeyViolationRow>(
+      'PRAGMA foreign_key_check'
+    );
+
+    if (foreignKeyViolations.length > 0) {
+      const firstViolation = foreignKeyViolations[0];
+      throw new Error(
+        `Database migration produced a foreign-key violation in ${firstViolation.table}.`
+      );
+    }
+
     if (currentVersion < DATABASE_VERSION) {
       await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);
     }
 
     await db.execAsync('COMMIT');
+    transactionOpen = false;
   } catch (error) {
-    await db.execAsync('ROLLBACK');
+    if (transactionOpen) {
+      await db.execAsync('ROLLBACK');
+    }
+
     throw error;
+  } finally {
+    if (requiresPlanTableRebuild) {
+      await db.execAsync('PRAGMA foreign_keys = ON');
+    }
   }
 }
 

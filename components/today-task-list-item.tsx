@@ -10,6 +10,8 @@ import type { TaskSessionState } from '@/utils/taskSession';
 type TodayTaskListItemProps = {
   details: TaskPlanDetails;
   sessionState: TaskSessionState | null;
+  goalReached: boolean;
+  isExtended: boolean;
   isStarting: boolean;
   isRemoving: boolean;
   isDisabled: boolean;
@@ -42,6 +44,8 @@ function formatDuration(minutes: number): string {
 export function TodayTaskListItem({
   details,
   sessionState,
+  goalReached,
+  isExtended,
   isStarting,
   isRemoving,
   isDisabled,
@@ -53,7 +57,13 @@ export function TodayTaskListItem({
   const colors = Colors[colorScheme];
   const { plan, task, category } = details;
   const hasOpenSession = sessionState === 'RUNNING' || sessionState === 'PAUSED';
-  const sessionLabel = sessionState === 'RUNNING' ? 'Focus in progress' : 'Paused';
+  const sessionLabel = isExtended
+    ? 'Extended'
+    : goalReached
+      ? 'Goal reached'
+      : sessionState === 'RUNNING'
+        ? 'Focus in progress'
+        : 'Paused';
 
   return (
     <View style={[styles.container, { borderBottomColor: colors.border }]}>
