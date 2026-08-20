@@ -19,6 +19,8 @@ export const createTasksTable = `
     coin_reward INTEGER NOT NULL,
     coins_per_hour INTEGER NOT NULL
       CHECK (coins_per_hour > 0),
+    is_focused INTEGER NOT NULL DEFAULT 0
+      CHECK (is_focused IN (0, 1)),
     estimated_duration_minutes INTEGER,
 
     created_at TEXT NOT NULL,
@@ -112,6 +114,14 @@ export const createDailyTaskPlansTable = `
       CHECK (planned_duration_minutes > 0),
     planned_coin_amount INTEGER NOT NULL
       CHECK (planned_coin_amount > 0),
+    coins_per_hour_snapshot INTEGER NOT NULL
+      CHECK (coins_per_hour_snapshot > 0),
+    is_focused_snapshot INTEGER NOT NULL
+      CHECK (is_focused_snapshot IN (0, 1)),
+    suggested_raw_coin_amount REAL NOT NULL
+      CHECK (suggested_raw_coin_amount > 0),
+    suggested_coin_amount INTEGER NOT NULL
+      CHECK (suggested_coin_amount > 0),
     priority TEXT NOT NULL
       CHECK (priority IN ('NORMAL', 'IMPORTANT', 'URGENT')),
     created_at TEXT NOT NULL,
@@ -207,6 +217,54 @@ export const createDailyTaskPlanCoinIntegrityTriggers = `
   WHEN NEW.planned_coin_amount IS NULL OR NEW.planned_coin_amount <= 0
   BEGIN
     SELECT RAISE(ABORT, 'daily_task_plans.planned_coin_amount must be greater than 0');
+  END;
+`;
+
+export const createTaskFocusIntegrityTriggers = `
+  CREATE TRIGGER IF NOT EXISTS tasks_is_focused_required_on_insert
+  BEFORE INSERT ON tasks
+  WHEN NEW.is_focused IS NULL OR NEW.is_focused NOT IN (0, 1)
+  BEGIN
+    SELECT RAISE(ABORT, 'tasks.is_focused must be 0 or 1');
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS tasks_is_focused_required_on_update
+  BEFORE UPDATE OF is_focused ON tasks
+  WHEN NEW.is_focused IS NULL OR NEW.is_focused NOT IN (0, 1)
+  BEGIN
+    SELECT RAISE(ABORT, 'tasks.is_focused must be 0 or 1');
+  END;
+`;
+
+export const createDailyTaskPlanRewardSnapshotIntegrityTriggers = `
+  CREATE TRIGGER IF NOT EXISTS daily_task_plans_reward_snapshots_required_on_insert
+  BEFORE INSERT ON daily_task_plans
+  WHEN NEW.coins_per_hour_snapshot IS NULL
+    OR NEW.coins_per_hour_snapshot <= 0
+    OR NEW.is_focused_snapshot IS NULL
+    OR NEW.is_focused_snapshot NOT IN (0, 1)
+    OR NEW.suggested_raw_coin_amount IS NULL
+    OR NEW.suggested_raw_coin_amount <= 0
+    OR NEW.suggested_coin_amount IS NULL
+    OR NEW.suggested_coin_amount <= 0
+  BEGIN
+    SELECT RAISE(ABORT, 'daily_task_plans reward snapshots are invalid');
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS daily_task_plans_reward_snapshots_required_on_update
+  BEFORE UPDATE OF coins_per_hour_snapshot, is_focused_snapshot,
+    suggested_raw_coin_amount, suggested_coin_amount
+  ON daily_task_plans
+  WHEN NEW.coins_per_hour_snapshot IS NULL
+    OR NEW.coins_per_hour_snapshot <= 0
+    OR NEW.is_focused_snapshot IS NULL
+    OR NEW.is_focused_snapshot NOT IN (0, 1)
+    OR NEW.suggested_raw_coin_amount IS NULL
+    OR NEW.suggested_raw_coin_amount <= 0
+    OR NEW.suggested_coin_amount IS NULL
+    OR NEW.suggested_coin_amount <= 0
+  BEGIN
+    SELECT RAISE(ABORT, 'daily_task_plans reward snapshots are invalid');
   END;
 `;
 

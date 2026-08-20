@@ -18,7 +18,7 @@ import { TaskDurationPicker } from '@/components/task-duration-picker';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { Task, TaskPriority } from '@/models/types';
-import { calculateSuggestedTaskCoins } from '@/services/dailyTaskPlanService';
+import { calculateSuggestedGoalRewardForMinutes } from '@/utils/taskReward';
 
 export type AddTaskPlanFormInput = {
   plannedDurationMinutes: number;
@@ -71,7 +71,11 @@ export function TaskPlanModal({
   const durationIsValid = plannedDurationMinutes > 0;
   const suggestedCoinAmount =
     task && durationIsValid
-      ? calculateSuggestedTaskCoins(task.coinsPerHour, plannedDurationMinutes)
+      ? calculateSuggestedGoalRewardForMinutes(
+          plannedDurationMinutes,
+          task.coinsPerHour,
+          task.isFocused
+        )
       : 0;
   const canSubmit =
     task !== null && durationIsValid && isPositiveIntegerInput(coinAmount) && !isSubmitting;
@@ -88,7 +92,11 @@ export function TaskPlanModal({
     const suggestedHoursPart = Math.floor(suggestedDuration / 60);
     const suggestedMinutesPart = suggestedDuration % 60;
     const initialCoinAmount = task
-      ? calculateSuggestedTaskCoins(task.coinsPerHour, suggestedDuration)
+      ? calculateSuggestedGoalRewardForMinutes(
+          suggestedDuration,
+          task.coinsPerHour,
+          task.isFocused
+        )
       : 0;
 
     setHours(suggestedHoursPart);
@@ -175,7 +183,7 @@ export function TaskPlanModal({
             </View>
 
             <View style={styles.field}>
-              <Text style={[styles.label, { color: colors.text }]}>Planned Duration</Text>
+              <Text style={[styles.label, { color: colors.text }]}>Goal Duration</Text>
               <TaskDurationPicker
                 disabled={isSubmitting}
                 hours={hours}
@@ -227,14 +235,15 @@ export function TaskPlanModal({
 
             <View style={styles.field}>
               <View style={styles.rewardHeader}>
-                <Text style={[styles.label, { color: colors.text }]}>Coins Rewarded</Text>
+                <Text style={[styles.label, { color: colors.text }]}>Goal Reward</Text>
                 <Text style={[styles.rateText, { color: colors.mutedText }]}>
-                  Suggested from {task?.coinsPerHour ?? 0} coins/hr
+                  Suggested: +{suggestedCoinAmount} from {task?.coinsPerHour ?? 0} coins/hr
+                  {task?.isFocused ? ' · Focused' : ''}
                 </Text>
               </View>
               <View style={styles.coinRow}>
                 <TextInput
-                  accessibilityLabel="Coins rewarded"
+                  accessibilityLabel="Goal reward"
                   keyboardType="number-pad"
                   maxLength={9}
                   onChangeText={(value) => {
@@ -256,7 +265,7 @@ export function TaskPlanModal({
                   value={coinAmount}
                 />
                 <Pressable
-                  accessibilityLabel="Use suggested coin reward"
+                  accessibilityLabel="Use suggested goal reward"
                   accessibilityRole="button"
                   disabled={isSubmitting || !durationIsValid}
                   onPress={() => {

@@ -13,6 +13,7 @@ export interface Task {
   categoryId: string;
 
   coinsPerHour: number;
+  isFocused: boolean;
   estimatedDurationMinutes: number | null;
 
   createdAt: string;
@@ -47,6 +48,10 @@ export interface DailyTaskPlan {
   categoryId: string;
   plannedDurationMinutes: number;
   plannedCoinAmount: number;
+  coinsPerHourSnapshot: number;
+  isFocusedSnapshot: boolean;
+  suggestedRawCoinAmount: number;
+  suggestedCoinAmount: number;
   priority: TaskPriority;
   createdAt: string;
 }

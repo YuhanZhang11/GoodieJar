@@ -11,6 +11,7 @@ type TaskRow = {
   description: string;
   category_id: string;
   coins_per_hour: number;
+  is_focused: number;
   estimated_duration_minutes: number | null;
   created_at: string;
   archived_at: string | null;
@@ -21,6 +22,7 @@ export type CreateTaskInput = {
   description?: string;
   categoryId?: string;
   coinsPerHour: number;
+  isFocused?: boolean;
   estimatedDurationMinutes?: number | null;
 };
 
@@ -29,6 +31,7 @@ export type UpdateTaskInput = {
   description?: string;
   categoryId?: string;
   coinsPerHour?: number;
+  isFocused?: boolean;
   estimatedDurationMinutes?: number | null;
 };
 
@@ -39,6 +42,7 @@ function mapTaskRow(row: TaskRow): Task {
     description: row.description,
     categoryId: row.category_id,
     coinsPerHour: row.coins_per_hour,
+    isFocused: row.is_focused === 1,
     estimatedDurationMinutes: row.estimated_duration_minutes,
     createdAt: row.created_at,
     archivedAt: row.archived_at,
@@ -65,6 +69,14 @@ function validateCoinsPerHour(coinsPerHour: number): number {
   }
 
   return coinsPerHour;
+}
+
+function validateIsFocused(isFocused: boolean): boolean {
+  if (typeof isFocused !== 'boolean') {
+    throw new Error('Task isFocused must be a boolean.');
+  }
+
+  return isFocused;
 }
 
 function validateEstimatedDuration(estimatedDurationMinutes: number | null | undefined) {
@@ -137,6 +149,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
     description: input.description ?? '',
     categoryId: await resolveActiveCategoryId(input.categoryId, db),
     coinsPerHour: validateCoinsPerHour(input.coinsPerHour),
+    isFocused: validateIsFocused(input.isFocused ?? false),
     estimatedDurationMinutes: validateEstimatedDuration(input.estimatedDurationMinutes),
     createdAt: now,
     archivedAt: null,
@@ -150,10 +163,11 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       category_id,
       coin_reward,
       coins_per_hour,
+      is_focused,
       estimated_duration_minutes,
       created_at,
       archived_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       task.id,
       task.name,
@@ -161,6 +175,7 @@ export async function createTask(input: CreateTaskInput): Promise<Task> {
       task.categoryId,
       task.coinsPerHour,
       task.coinsPerHour,
+      task.isFocused ? 1 : 0,
       task.estimatedDurationMinutes,
       task.createdAt,
       task.archivedAt,
@@ -209,6 +224,10 @@ export async function updateTask(id: string, input: UpdateTaskInput): Promise<Ta
       input.coinsPerHour === undefined
         ? existingTask.coinsPerHour
         : validateCoinsPerHour(input.coinsPerHour),
+    isFocused:
+      input.isFocused === undefined
+        ? existingTask.isFocused
+        : validateIsFocused(input.isFocused),
     estimatedDurationMinutes:
       input.estimatedDurationMinutes === undefined
         ? existingTask.estimatedDurationMinutes
@@ -222,6 +241,7 @@ export async function updateTask(id: string, input: UpdateTaskInput): Promise<Ta
          category_id = ?,
          coin_reward = ?,
          coins_per_hour = ?,
+         is_focused = ?,
          estimated_duration_minutes = ?
      WHERE id = ?`,
     [
@@ -230,6 +250,7 @@ export async function updateTask(id: string, input: UpdateTaskInput): Promise<Ta
       updatedTask.categoryId,
       updatedTask.coinsPerHour,
       updatedTask.coinsPerHour,
+      updatedTask.isFocused ? 1 : 0,
       updatedTask.estimatedDurationMinutes,
       updatedTask.id,
     ]

@@ -2,12 +2,14 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -24,6 +26,7 @@ export type TaskTemplateFormInput = {
   description: string;
   categoryId: string;
   coinsPerHour: number;
+  isFocused: boolean;
 };
 
 type TaskFormModalProps = {
@@ -67,6 +70,7 @@ export function TaskFormModal({
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [coinsPerHour, setCoinsPerHour] = useState('');
+  const [isFocused, setIsFocused] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const isSubmittingRef = useRef(false);
@@ -87,6 +91,7 @@ export function TaskFormModal({
     setDescription(isEditMode && initialValues ? initialValues.description : '');
     setCategoryId(isEditMode && initialValues ? initialValues.categoryId : defaultCategoryId);
     setCoinsPerHour(isEditMode && initialValues ? String(initialValues.coinsPerHour) : '');
+    setIsFocused(isEditMode && initialValues ? initialValues.isFocused : false);
     setErrorMessage(null);
   }, [defaultCategoryId, initialValues, isEditMode, visible]);
 
@@ -95,6 +100,7 @@ export function TaskFormModal({
     setDescription('');
     setCategoryId('');
     setCoinsPerHour('');
+    setIsFocused(false);
     setErrorMessage(null);
   }
 
@@ -122,6 +128,7 @@ export function TaskFormModal({
         description,
         categoryId,
         coinsPerHour: Number(coinsPerHour),
+        isFocused,
       });
       resetForm();
       onRequestClose();
@@ -224,9 +231,9 @@ export function TaskFormModal({
               </View>
 
               <View style={styles.field}>
-                <Text style={[styles.label, { color: colors.text }]}>Coins / hour</Text>
+                <Text style={[styles.label, { color: colors.text }]}>Base Coins / Hour</Text>
                 <TextInput
-                  accessibilityLabel="Coins per hour"
+                  accessibilityLabel="Base coins per hour"
                   keyboardType="number-pad"
                   maxLength={9}
                   onChangeText={setCoinsPerHour}
@@ -239,6 +246,40 @@ export function TaskFormModal({
                     { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
                   ]}
                   value={coinsPerHour}
+                />
+              </View>
+
+              <View style={[styles.focusedRow, { borderColor: colors.border }]}>
+                <View style={styles.focusedTextBlock}>
+                  <View style={styles.focusedLabelRow}>
+                    <Text style={[styles.label, { color: colors.text }]}>Focused</Text>
+                    <Pressable
+                      accessibilityLabel="About Focused mode"
+                      accessibilityRole="button"
+                      hitSlop={8}
+                      onPress={() =>
+                        Alert.alert(
+                          'Focused mode',
+                          'Focused mode rewards sustained concentration. Rewards start below your base rate during the first hour, increase during 1-3 hours of focused work, then gradually decrease afterward to encourage productive work and healthy breaks.'
+                        )
+                      }
+                      style={({ pressed }) => [styles.infoButton, { opacity: pressed ? 0.55 : 1 }]}>
+                      <MaterialIcons name="info-outline" size={19} color={colors.primary} />
+                    </Pressable>
+                  </View>
+                  <Text style={[styles.focusedHint, { color: colors.mutedText }]}>
+                    Use the sustained-focus reward curve.
+                  </Text>
+                </View>
+                <Switch
+                  accessibilityLabel="Focused reward mode"
+                  accessibilityRole="switch"
+                  accessibilityState={{ checked: isFocused, disabled: isSubmitting }}
+                  disabled={isSubmitting}
+                  ios_backgroundColor={colors.border}
+                  onValueChange={setIsFocused}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  value={isFocused}
                 />
               </View>
             </View>
@@ -321,6 +362,19 @@ const styles = StyleSheet.create({
   },
   descriptionInput: { minHeight: 92 },
   coinInput: { maxWidth: 180 },
+  focusedRow: {
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: 12,
+    minHeight: 64,
+    paddingVertical: 8,
+  },
+  focusedTextBlock: { flex: 1, gap: 1, minWidth: 0 },
+  focusedLabelRow: { alignItems: 'center', flexDirection: 'row', gap: 3 },
+  focusedHint: { fontSize: 12, lineHeight: 17 },
+  infoButton: { alignItems: 'center', height: 32, justifyContent: 'center', width: 32 },
   helperText: { fontSize: 12, lineHeight: 17 },
   errorText: { fontSize: 14, lineHeight: 20 },
   actions: { flexDirection: 'row', gap: 10, justifyContent: 'flex-end' },

@@ -39,7 +39,7 @@ export function TaskListItem({
       onEdit={() => onEdit(task)}
       onOpen={onSwipeOpen}>
       <Pressable
-        accessibilityLabel={`Add ${task.name} to Today, category ${categoryName}`}
+        accessibilityLabel={`Add ${task.name} to Today, category ${categoryName}, ${task.coinsPerHour} base coins per hour${task.isFocused ? ', Focused' : ''}`}
         accessibilityRole="button"
         disabled={isDisabled}
         onPress={() => onSelect(task)}
@@ -54,12 +54,20 @@ export function TaskListItem({
           <Text ellipsizeMode="tail" numberOfLines={1} style={[styles.name, { color: colors.text }]}>
             {task.name}
           </Text>
-          <Text
-            ellipsizeMode="tail"
-            numberOfLines={1}
-            style={[styles.category, { color: colors.mutedText }]}>
-            {categoryName}
-          </Text>
+          <View style={styles.metadataRow}>
+            <Text
+              ellipsizeMode="tail"
+              numberOfLines={1}
+              style={[styles.category, { color: colors.mutedText }]}>
+              {categoryName} {'\u00B7'} {task.coinsPerHour} coins/hr
+            </Text>
+            {task.isFocused ? (
+              <View style={[styles.focusedBadge, { backgroundColor: colors.surfaceMuted }]}>
+                <MaterialIcons name="center-focus-strong" size={13} color={colors.primary} />
+                <Text style={[styles.focusedText, { color: colors.primary }]}>Focused</Text>
+              </View>
+            ) : null}
+          </View>
         </View>
         <MaterialIcons name="chevron-right" size={24} color={colors.icon} />
       </Pressable>
@@ -87,7 +95,20 @@ const styles = StyleSheet.create({
     lineHeight: 21,
   },
   category: {
+    flex: 1,
     fontSize: 13,
     lineHeight: 18,
+    minWidth: 0,
   },
+  metadataRow: { alignItems: 'center', flexDirection: 'row', gap: 6 },
+  focusedBadge: {
+    alignItems: 'center',
+    borderRadius: 7,
+    flexDirection: 'row',
+    flexShrink: 0,
+    gap: 2,
+    minHeight: 24,
+    paddingHorizontal: 6,
+  },
+  focusedText: { fontSize: 11, fontWeight: '700', lineHeight: 15 },
 });

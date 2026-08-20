@@ -6,11 +6,13 @@ import {
   createAllTables,
   createDailyTaskPlanCoinIntegrityTriggers,
   createDailyTaskPlanCategoryIntegrityTriggers,
+  createDailyTaskPlanRewardSnapshotIntegrityTriggers,
   createTaskCoinRateIntegrityTriggers,
   createTaskCategoryIntegrityTriggers,
+  createTaskFocusIntegrityTriggers,
 } from './schema';
 
-const DATABASE_VERSION = 3;
+const DATABASE_VERSION = 4;
 
 type UserVersionRow = {
   user_version: number;
@@ -168,11 +170,131 @@ async function migrateDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
       }
     }
 
+    if (currentVersion < 4) {
+      const taskColumns = await db.getAllAsync<TableColumnRow>('PRAGMA table_info(tasks)');
+      const hasIsFocused = taskColumns.some((column) => column.name === 'is_focused');
+
+      if (!hasIsFocused) {
+        await db.execAsync(
+          `ALTER TABLE tasks
+           ADD COLUMN is_focused INTEGER NOT NULL DEFAULT 0
+           CHECK (is_focused IN (0, 1))`
+        );
+      }
+
+      const planColumns = await db.getAllAsync<TableColumnRow>(
+        'PRAGMA table_info(daily_task_plans)'
+      );
+      const hasRateSnapshot = planColumns.some(
+        (column) => column.name === 'coins_per_hour_snapshot'
+      );
+      const hasFocusedSnapshot = planColumns.some(
+        (column) => column.name === 'is_focused_snapshot'
+      );
+      const hasSuggestedRawCoinAmount = planColumns.some(
+        (column) => column.name === 'suggested_raw_coin_amount'
+      );
+      const hasSuggestedCoinAmount = planColumns.some(
+        (column) => column.name === 'suggested_coin_amount'
+      );
+
+      if (!hasRateSnapshot) {
+        await db.execAsync(
+          `ALTER TABLE daily_task_plans
+           ADD COLUMN coins_per_hour_snapshot INTEGER
+           CHECK (coins_per_hour_snapshot > 0)`
+        );
+      }
+
+      if (!hasFocusedSnapshot) {
+        await db.execAsync(
+          `ALTER TABLE daily_task_plans
+           ADD COLUMN is_focused_snapshot INTEGER NOT NULL DEFAULT 0
+           CHECK (is_focused_snapshot IN (0, 1))`
+        );
+      }
+
+      if (!hasSuggestedRawCoinAmount) {
+        await db.execAsync(
+          `ALTER TABLE daily_task_plans
+           ADD COLUMN suggested_raw_coin_amount REAL
+           CHECK (suggested_raw_coin_amount > 0)`
+        );
+      }
+
+      if (!hasSuggestedCoinAmount) {
+        await db.execAsync(
+          `ALTER TABLE daily_task_plans
+           ADD COLUMN suggested_coin_amount INTEGER
+           CHECK (suggested_coin_amount > 0)`
+        );
+      }
+
+      await db.execAsync(`
+        UPDATE daily_task_plans
+        SET coins_per_hour_snapshot = (
+          SELECT tasks.coins_per_hour
+          FROM tasks
+          WHERE tasks.id = daily_task_plans.task_id
+        )
+        WHERE coins_per_hour_snapshot IS NULL
+      `);
+
+      // Existing plans used the prior linear suggestion, so keep that economic baseline.
+      await db.execAsync(`
+        UPDATE daily_task_plans
+        SET is_focused_snapshot = 0
+      `);
+
+      await db.execAsync(`
+        UPDATE daily_task_plans
+        SET suggested_raw_coin_amount =
+          coins_per_hour_snapshot * planned_duration_minutes / 60.0
+        WHERE suggested_raw_coin_amount IS NULL
+      `);
+
+      await db.execAsync(`
+        UPDATE daily_task_plans
+        SET suggested_coin_amount = CAST(
+          (
+            coins_per_hour_snapshot * planned_duration_minutes + 59
+          ) / 60 AS INTEGER
+        )
+        WHERE suggested_coin_amount IS NULL
+      `);
+
+      const invalidTaskFocusRow = await db.getFirstAsync<CountRow>(
+        'SELECT COUNT(*) AS count FROM tasks WHERE is_focused IS NULL OR is_focused NOT IN (0, 1)'
+      );
+      const invalidPlanSnapshotRow = await db.getFirstAsync<CountRow>(
+        `SELECT COUNT(*) AS count
+         FROM daily_task_plans
+         WHERE coins_per_hour_snapshot IS NULL
+           OR coins_per_hour_snapshot <= 0
+           OR is_focused_snapshot IS NULL
+           OR is_focused_snapshot NOT IN (0, 1)
+           OR suggested_raw_coin_amount IS NULL
+           OR suggested_raw_coin_amount <= 0
+           OR suggested_coin_amount IS NULL
+           OR suggested_coin_amount <= 0`
+      );
+
+      if ((invalidTaskFocusRow?.count ?? 0) > 0) {
+        throw new Error('Task Focused-mode backfill did not complete.');
+      }
+
+      if ((invalidPlanSnapshotRow?.count ?? 0) > 0) {
+        throw new Error('DailyTaskPlan reward-snapshot backfill did not complete.');
+      }
+    }
+
     await db.execAsync(createAllIndexes);
     await db.execAsync(createTaskCategoryIntegrityTriggers);
     await db.execAsync(createTaskCoinRateIntegrityTriggers);
+    await db.execAsync(createTaskFocusIntegrityTriggers);
     await db.execAsync(createDailyTaskPlanCategoryIntegrityTriggers);
     await db.execAsync(createDailyTaskPlanCoinIntegrityTriggers);
+    await db.execAsync(createDailyTaskPlanRewardSnapshotIntegrityTriggers);
 
     if (currentVersion < DATABASE_VERSION) {
       await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);

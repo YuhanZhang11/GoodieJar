@@ -5,6 +5,7 @@ import type { DailyTaskPlan, Task, TaskCategory, TaskPriority } from '@/models/t
 import { getOrCreateDailyLog } from '@/services/dailyLogService';
 import { getTaskById } from '@/services/taskService';
 import { validateLocalDateKey } from '@/utils/localDate';
+import { calculateRawTaskReward } from '@/utils/taskReward';
 
 type TaskPlanDetailsRow = {
   plan_id: string;
@@ -13,12 +14,17 @@ type TaskPlanDetailsRow = {
   plan_category_id: string;
   planned_duration_minutes: number;
   planned_coin_amount: number;
+  coins_per_hour_snapshot: number;
+  is_focused_snapshot: number;
+  suggested_raw_coin_amount: number;
+  suggested_coin_amount: number;
   priority: TaskPriority;
   plan_created_at: string;
   task_name: string;
   task_description: string;
   task_category_id: string;
   task_coins_per_hour: number;
+  task_is_focused: number;
   task_estimated_duration_minutes: number | null;
   task_created_at: string;
   task_archived_at: string | null;
@@ -55,12 +61,17 @@ const TASK_PLAN_DETAILS_SELECT = `
     plan.category_id AS plan_category_id,
     plan.planned_duration_minutes,
     plan.planned_coin_amount,
+    plan.coins_per_hour_snapshot,
+    plan.is_focused_snapshot,
+    plan.suggested_raw_coin_amount,
+    plan.suggested_coin_amount,
     plan.priority,
     plan.created_at AS plan_created_at,
     task.name AS task_name,
     task.description AS task_description,
     task.category_id AS task_category_id,
     task.coins_per_hour AS task_coins_per_hour,
+    task.is_focused AS task_is_focused,
     task.estimated_duration_minutes AS task_estimated_duration_minutes,
     task.created_at AS task_created_at,
     task.archived_at AS task_archived_at,
@@ -82,6 +93,10 @@ function mapTaskPlanDetailsRow(row: TaskPlanDetailsRow): TaskPlanDetails {
       categoryId: row.plan_category_id,
       plannedDurationMinutes: row.planned_duration_minutes,
       plannedCoinAmount: row.planned_coin_amount,
+      coinsPerHourSnapshot: row.coins_per_hour_snapshot,
+      isFocusedSnapshot: row.is_focused_snapshot === 1,
+      suggestedRawCoinAmount: row.suggested_raw_coin_amount,
+      suggestedCoinAmount: row.suggested_coin_amount,
       priority: row.priority,
       createdAt: row.plan_created_at,
     },
@@ -91,6 +106,7 @@ function mapTaskPlanDetailsRow(row: TaskPlanDetailsRow): TaskPlanDetails {
       description: row.task_description,
       categoryId: row.task_category_id,
       coinsPerHour: row.task_coins_per_hour,
+      isFocused: row.task_is_focused === 1,
       estimatedDurationMinutes: row.task_estimated_duration_minutes,
       createdAt: row.task_created_at,
       archivedAt: row.task_archived_at,
@@ -135,17 +151,12 @@ function validatePlannedCoinAmount(plannedCoinAmount: number): number {
   return plannedCoinAmount;
 }
 
-export function calculateSuggestedTaskCoins(
-  coinsPerHour: number,
-  plannedDurationMinutes: number
-): number {
-  if (!Number.isInteger(coinsPerHour) || coinsPerHour <= 0) {
-    throw new Error('Task coinsPerHour must be an integer greater than 0.');
+function validateSuggestedRawCoinAmount(suggestedRawCoinAmount: number): number {
+  if (!Number.isFinite(suggestedRawCoinAmount) || suggestedRawCoinAmount <= 0) {
+    throw new Error('DailyTaskPlan suggestedRawCoinAmount must be finite and greater than 0.');
   }
 
-  const validDuration = validatePlannedDuration(plannedDurationMinutes);
-
-  return Math.ceil((coinsPerHour * validDuration) / 60);
+  return suggestedRawCoinAmount;
 }
 
 function validatePriority(priority: TaskPriority): TaskPriority {
@@ -202,9 +213,18 @@ export async function addTaskToDate(input: AddTaskToDateInput): Promise<TaskPlan
         throw new Error(`Task with id "${taskId}" is archived and cannot be planned.`);
       }
 
+      const suggestedRawCoinAmount = validateSuggestedRawCoinAmount(
+        calculateRawTaskReward(
+          plannedDurationMinutes * 60,
+          task.coinsPerHour,
+          task.isFocused
+        )
+      );
+      const suggestedCoinAmount = validatePlannedCoinAmount(
+        Math.ceil(suggestedRawCoinAmount)
+      );
       const plannedCoinAmount = validatePlannedCoinAmount(
-        input.plannedCoinAmount ??
-          calculateSuggestedTaskCoins(task.coinsPerHour, plannedDurationMinutes)
+        input.plannedCoinAmount ?? suggestedCoinAmount
       );
 
       const dailyLog = await getOrCreateDailyLog(date, db);
@@ -218,9 +238,13 @@ export async function addTaskToDate(input: AddTaskToDateInput): Promise<TaskPlan
           category_id,
           planned_duration_minutes,
           planned_coin_amount,
+          coins_per_hour_snapshot,
+          is_focused_snapshot,
+          suggested_raw_coin_amount,
+          suggested_coin_amount,
           priority,
           created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           planId,
           task.id,
@@ -228,6 +252,10 @@ export async function addTaskToDate(input: AddTaskToDateInput): Promise<TaskPlan
           task.categoryId,
           plannedDurationMinutes,
           plannedCoinAmount,
+          task.coinsPerHour,
+          task.isFocused ? 1 : 0,
+          suggestedRawCoinAmount,
+          suggestedCoinAmount,
           priority,
           createdAt,
         ]
