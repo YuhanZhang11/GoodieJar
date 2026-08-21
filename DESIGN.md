@@ -6,13 +6,14 @@ GoodieJar is a mobile self-reward application that turns productive or meaningfu
 
 Users can:
 
-- Complete tasks to earn coins
+- Plan reusable Tasks as independent Daily Task Entries
+- Run persistent Focus Sessions and earn coins from actual active time
 - Save accumulated coins
 - Redeem rewards by spending coins
 - Record meaningful achievements and receive bonus coins
-- Track daily activity
-- Record daily mental exhaustion
-- Record estimated and actual activity duration
+- Set and finish Daily Goals for bonus coins
+- Review daily activity in Calendar
+- Record planned and actual activity duration
 
 The app should feel lightweight, cute, rewarding, and visually satisfying rather than like a traditional productivity or finance application.
 
@@ -56,7 +57,7 @@ Example:
 ```text
 Task: Study ML
 
-Current coin reward: 20
+Current base rate: 20 coins/hour
 Estimated duration: 60 minutes
 
 Historical behavior:
@@ -64,7 +65,7 @@ Average actual duration: 95 minutes
 Mental exhaustion: consistently high
 
 Possible future recommendation:
-Increase reward from 20 → 30 coins
+Increase base rate from 20 to 30 coins/hour
 ```
 
 This adaptive reward system is NOT part of the MVP.
@@ -77,10 +78,10 @@ This adaptive reward system is NOT part of the MVP.
 
 The MVP should support:
 
-- Create Task
-- Edit Task
-- Archive Task
-- Complete Task
+- Create, edit, and archive reusable Tasks
+- Add independent Daily Task Entries to Today
+- Start, pause, resume, extend, and stop persistent Focus Sessions
+- Add the same Task to one day more than once
 - Earn coins from Tasks
 - Create Reward
 - Edit Reward
@@ -91,9 +92,10 @@ The MVP should support:
 - Award coins for Achievement
 - Record transaction history
 - Record actual duration of an activity
-- Record daily mental exhaustion
 - Calculate current coin balance
 - Review activities by day
+- Create, edit, track, and explicitly finish Daily Goals
+- Award Focus, Task, and Combo Daily Goal bonuses at Finish Today
 
 ### Not Included
 
@@ -107,7 +109,7 @@ The MVP does not initially include:
 - Shared accounts
 - AI recommendations
 - Automatic coin-value adjustment
-- Push notifications
+- Remote push notifications
 - Subscription/payment systems
 - Complex analytics
 
@@ -175,17 +177,32 @@ services/
 
 UI components should not contain raw SQL beyond trivial cases.
 
+Current bottom tabs are:
+
+```text
+Tasks
+Rewards
+Achievements
+Calendar
+```
+
+Tasks is also the Today/home-like surface. GoodieJar does not have a separate Home tab.
+
 ---
 
 ## 7. Core Entities
 
-GoodieJar currently has five primary entities:
+GoodieJar currently has these primary domain entities:
 
 ```text
+TaskCategory
 Task
+DailyTaskPlan (conceptually a Daily Task Entry)
+TaskSession
 Reward
 Achievement
 DailyLog
+DailyGoal
 CoinTransaction
 ```
 
@@ -220,8 +237,10 @@ export interface Task {
   id: string;
   name: string;
   description: string;
+  categoryId: string;
 
-  coinReward: number;
+  coinsPerHour: number;
+  isFocused: boolean;
   estimatedDurationMinutes: number | null;
 
   createdAt: string;
@@ -253,16 +272,33 @@ Additional Task description.
 
 An empty string may be used when no description is provided.
 
-#### `coinReward`
+#### `categoryId`
 
-Number of coins received each time the Task is completed.
+Current organizational category for the reusable Task template.
+
+TaskCategory is classification metadata. Reward behavior does not live on the Category.
+
+#### `coinsPerHour`
+
+Positive base earning rate for the Task.
 
 Example:
 
 ```text
 Study ML
-coinReward = 20
+coinsPerHour = 40
 ```
+
+#### `isFocused`
+
+Controls the Task's reward behavior.
+
+```text
+false = linear reward by active duration
+true  = the centralized marginal Focused reward curve
+```
+
+The Focused curve belongs to each Task and is never inferred from its Category.
 
 #### `estimatedDurationMinutes`
 
@@ -293,6 +329,65 @@ means the Task is active.
 A timestamp means the Task has been archived.
 
 Archiving removes a Task from active Task lists without destroying history.
+
+### Daily Task Entry
+
+`DailyTaskPlan` is the implementation model for one concrete occurrence of a reusable Task on a local calendar day. Product terminology may describe it as a Daily Task Entry.
+
+The same Task may be added to the same day more than once. Each entry has its own:
+
+- `id`, which is the occurrence identity
+- Goal Duration
+- Priority
+- Goal Reward
+- Task and Category snapshots
+- Focus Session and final payout
+
+`DailyTaskPlan.id`, not `taskId + dailyLogId` or a timestamp, identifies the occurrence.
+
+Goal Reward may be manually overridden before Start. The plan preserves the suggested raw and displayed values so the later session can apply the existing reward-scale semantics precisely.
+
+### Focus Session
+
+`TaskSession` represents actual execution of one Daily Task Entry from Start through Pause/Resume/Stop.
+
+Session state is derived from timestamps:
+
+```text
+RUNNING: activeStartedAt != null and endedAt == null
+PAUSED:  activeStartedAt == null and endedAt == null
+ENDED:   endedAt != null
+```
+
+Only one open TaskSession exists globally. A paused session is still open and blocks starting another session.
+
+Start freezes the plan's Goal Duration and reward inputs. Later Task template edits do not change an existing plan or session.
+
+Stop may occur before or after the entry's Goal Duration. It creates exactly one immutable EARN CoinTransaction based on actual active time. Paused time does not count, and an interval tick is never the authoritative timer.
+
+For a non-Focused Task, raw reward is linear:
+
+```text
+coinsPerHour * activeSeconds / 3600
+```
+
+Focused Tasks use the existing centralized marginal Focused reward curve. The calculation accumulates raw values across crossed intervals and rounds only the final reward.
+
+When the user accepts the suggested Goal Reward, session reward scale is `1`. When the Goal Reward is manually overridden, the frozen session uses:
+
+```text
+rewardScale = plannedCoinAmountSnapshot / suggestedRawCoinAmountSnapshot
+```
+
+An ended session is not automatically a Completed Task for Daily Goal purposes. A Daily Task Entry counts once toward the Daily Completed Tasks Goal only when:
+
+```text
+TaskSession.endedAt != null
+AND
+TaskSession.accumulatedSeconds >= TaskSession.goalDurationSecondsSnapshot
+```
+
+Therefore a session stopped early still receives its normal Task payout but does not count toward that Daily Goal. An open session above its Goal Duration does not count until Stop. Repeated entries count independently.
 
 ---
 
@@ -465,11 +560,184 @@ date = 2026-08-17
 mentalExhaustion = 7
 ```
 
+### Daily Goals
+
+The Tasks tab is the Today/home-like surface. Daily Goals appear above today's Daily Task Entries; there is no separate Home tab.
+
+Daily Goals V1 has exactly two user-set targets:
+
+1. Focus Time Goal
+2. Completed Tasks Goal
+
+Category-specific goals and rewards do not exist in V1. Category focus data is reserved for insights and visualization.
+
+There is at most one DailyGoal per DailyLog. It has two conceptual states.
+
+#### OPEN
+
+```text
+finishedAt == null
+```
+
+- Targets may be created or edited at any time during that local calendar day.
+- All progress from the day counts, including progress before goal creation.
+- Progress is dynamically derived from TaskSessions.
+- Bonus amounts are dynamic previews.
+- Reaching a goal is informational and does not issue coins.
+
+There is no first-session locking rule.
+
+Example:
+
+```text
+Already completed today:
+Focus Time = 120 minutes
+Completed Tasks = 2
+
+New targets:
+Focus Goal = 180 minutes
+Task Goal = 4
+
+Displayed progress:
+120 / 180 minutes
+2 / 4 tasks
+```
+
+#### FINISHED
+
+The user explicitly presses `Finish Today`. This is the settlement boundary.
+
+At Finish Today, the app transactionally:
+
+1. Verifies that no RUNNING or PAUSED TaskSession belongs to the DailyLog.
+2. Derives final Focus Time and Completed Tasks.
+3. Calculates the final typical hourly rate and bonus amounts.
+4. Snapshots the final progress and economy values.
+5. Sets `finishedAt`.
+6. Creates qualifying immutable Daily Goal CoinTransactions exactly once.
+
+Finish Today does not stop an open session silently. The user must Stop that session first.
+
+After Finish Today, targets and results are immutable. The user may still add, start, and stop Tasks normally, but later work cannot change the finalized Daily Goal result or earn another Daily Goal bonus for that date.
+
+### Daily Focus Time
+
+Daily Focus Time is derived rather than stored as a rolling aggregate.
+
+For TaskSessions whose Daily Task Entry belongs to the DailyLog:
+
+```text
+PAUSED or ENDED contribution = accumulatedSeconds
+
+RUNNING contribution =
+accumulatedSeconds + current active segment since activeStartedAt
+```
+
+Paused wall-clock time does not count. For V1, active time is attributed to the Daily Task Entry's local DailyLog date rather than splitting sessions at midnight.
+
+At Finish Today, `finalFocusSecondsSnapshot` freezes the result.
+
+### Daily Goal Economy Calibration
+
+The user does not configure an economy scale. GoodieJar derives `typicalHourlyRate` from:
+
+- Completed TaskSessions from the previous 14 local calendar dates
+- The current date excluded
+- `TaskSession.coinsPerHourSnapshot` as the value
+- `TaskSession.accumulatedSeconds` as the weight
+
+The weighted median is the hourly rate where cumulative active-time weight first reaches at least 50% of total weight.
+
+If no usable session history exists, use the ordinary median `coinsPerHour` of active Tasks. For an even count, average the two middle rates. If neither source exists, Daily Goal bonus calculation remains unavailable until an active Task exists.
+
+### Daily Goal Bonus Formulas
+
+```text
+rawFocusBonus =
+typicalHourlyRate
+* (focusGoalMinutes / 60)
+* 0.10
+
+focusBonusAmount = Math.round(rawFocusBonus)
+```
+
+The minimum Completed Tasks Goal is 3.
+
+```text
+taskTier = Math.ceil(taskGoalCount / 3)
+
+rawTaskBonus =
+typicalHourlyRate
+* 0.125
+* taskTier
+
+taskBonusAmount = Math.round(rawTaskBonus)
+```
+
+At a typical hourly rate of 40:
+
+```text
+3 tasks = +5
+4-6 tasks = +10
+7-9 tasks = +15
+```
+
+```text
+rawComboBonus = typicalHourlyRate * 0.25
+comboBonusAmount = Math.round(rawComboBonus)
+```
+
+Each component is calculated fully and rounded once with `Math.round`. There is no minimum one-coin bonus. A reached component may validly snapshot zero coins without creating an invalid zero-amount transaction.
+
+### Daily Goal Settlement
+
+While OPEN, reached bonuses are pending and balance does not change.
+
+At finalization:
+
+```text
+focusReached =
+finalFocusSecondsSnapshot >= focusGoalMinutes * 60
+
+taskReached =
+finalCompletedTaskCountSnapshot >= taskGoalCount
+
+comboReached = focusReached && taskReached
+```
+
+Create FOCUS, TASK, or COMBO transactions only for reached components whose final snapshot amount is greater than zero. Settlement uses one transaction-safe, idempotent path and enforces at most one payout per `dailyGoalId + goalBonusKind`.
+
+### DailyGoal Model
+
+```ts
+export interface DailyGoal {
+  id: string;
+  dailyLogId: string;
+  focusGoalMinutes: number;
+  taskGoalCount: number;
+
+  typicalHourlyRateSnapshot: number | null;
+  focusBonusAmountSnapshot: number | null;
+  taskBonusAmountSnapshot: number | null;
+  comboBonusAmountSnapshot: number | null;
+  finalFocusSecondsSnapshot: number | null;
+  finalCompletedTaskCountSnapshot: number | null;
+
+  finishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+Rate, bonus, and final progress snapshots are null while OPEN because previews are dynamic. Finish Today fills them with the frozen settlement/result values. Reached flags and rolling daily totals remain derived rather than separately persisted.
+
 ---
 
 ## 12. Mental Exhaustion
 
 `mentalExhaustion` represents how mentally exhausted the user feels for the day.
+
+The field is reserved in the local model, but mental-exhaustion input and adaptive behavior are planned rather than part of the current functional UI.
 
 Possible future UI:
 
@@ -526,6 +794,7 @@ Examples:
 
 ```ts
 export type TransactionType = 'EARN' | 'SPEND';
+export type GoalBonusKind = 'FOCUS' | 'TASK' | 'COMBO';
 
 export interface CoinTransaction {
   id: string;
@@ -539,6 +808,8 @@ export interface CoinTransaction {
   taskId: string | null;
   rewardId: string | null;
   achievementId: string | null;
+  dailyGoalId: string | null;
+  goalBonusKind: GoalBonusKind | null;
 
   dailyLogId: string;
 
@@ -585,11 +856,15 @@ SUM(SPEND)
 current balance
 ```
 
+Balance is never clamped to zero. A negative balance is valid and means the user spent coins in advance and can earn them back later.
+
 ---
 
 ## 15. Transaction Sources
 
 A transaction normally corresponds to exactly one source.
+
+Exactly one main source ID is non-null among Task, Reward, Achievement, and DailyGoal.
 
 ### Task Completion
 
@@ -620,6 +895,20 @@ taskId = null
 rewardId = null
 achievementId = achievement123
 ```
+
+### Daily Goal Bonus
+
+```text
+type = EARN
+
+taskId = null
+rewardId = null
+achievementId = null
+dailyGoalId = dailyGoal123
+goalBonusKind = FOCUS | TASK | COMBO
+```
+
+Daily Goal source names are immutable snapshots such as `Focus Goal Bonus`, `Task Goal Bonus`, and `Daily Goals Combo Bonus`.
 
 ---
 
@@ -698,6 +987,8 @@ actualDurationMinutes = 95
 
 This distinction is intentional and important for future personalization.
 
+For the current Task flow, a Daily Task Entry stores planned duration and TaskSession stores exact active seconds. The final Task CoinTransaction stores the compatible whole-minute actual-duration snapshot, while TaskSession remains the precise timing source.
+
 ---
 
 ## 18. DailyLog and Transaction Relationship
@@ -761,9 +1052,11 @@ dailyCoinsSpent =
 SUM(SPEND transactions)
 ```
 
-Task time can be calculated using Task-linked transactions.
+Task focus time is derived from TaskSessions and their Daily Task Entries.
 
 Reward time can be calculated using Reward-linked transactions.
+
+Daily Goal progress is also derived while OPEN. Only the final Focus Time and Completed Tasks result is snapshotted at Finish Today.
 
 This avoids redundant data and synchronization bugs.
 
@@ -774,55 +1067,74 @@ This avoids redundant data and synchronization bugs.
 High-level relationship:
 
 ```text
-Task ───────────────┐
-                    │
-Reward ─────────────┼──> CoinTransaction ───> DailyLog
-                    │
-Achievement ────────┘
+Task -> DailyTaskPlan -> TaskSession -> CoinTransaction
+Reward ------------------------------> CoinTransaction
+Achievement -------------------------> CoinTransaction
+DailyGoal ---------------------------> CoinTransaction
+
+DailyLog -> DailyTaskPlan many
+DailyLog -> DailyGoal zero or one
+DailyLog -> CoinTransaction many
 ```
 
 More specifically:
 
 ```text
 Task
-1 → many CoinTransactions
+1 -> many DailyTaskPlans
+1 -> many CoinTransactions
+
+DailyTaskPlan
+1 -> zero or one TaskSession
+
+TaskSession
+1 -> zero or one payout CoinTransaction
 
 Reward
 1 → many CoinTransactions
 
 Achievement
-1 → normally 1 CoinTransaction
+1 -> one initial CoinTransaction and optional immutable correction transactions
+
+DailyGoal
+1 -> at most one FOCUS, one TASK, and one COMBO CoinTransaction
 
 DailyLog
-1 → many CoinTransactions
+1 -> many CoinTransactions
 ```
 
 ---
 
-## 21. Complete Task Business Rule
+## 21. Stop TaskSession Business Rule
 
-When a user completes a Task:
+The user adds a reusable Task as a Daily Task Entry, then starts its TaskSession.
 
 ```text
 Task
- ↓
-Create CoinTransaction
+ -> DailyTaskPlan
+ -> Start TaskSession
+ -> Pause/Resume as needed
+ -> Stop
+ -> Create CoinTransaction
 ```
 
-Transaction should contain approximately:
+Stop calculates reward from exact accumulated active time using the session's frozen rate, Focused setting, and Goal Reward scale. It creates exactly one EARN transaction and records the transaction ID on TaskSession.
+
+Transaction contains approximately:
 
 ```text
 type = EARN
-amount = Task.coinReward
-sourceName = Task.name
+amount = final whole-coin TaskSession reward
+sourceName = Task name snapshot
 taskId = Task.id
 rewardId = null
 achievementId = null
-actualDurationMinutes = user-provided value or null
-occurredAt = completion timestamp
+dailyGoalId = null
+actualDurationMinutes = compatible actual active minutes
+occurredAt = Stop timestamp
 ```
 
-The original Task remains available for future completion.
+The Daily Task Entry and TaskSession remain persisted as history. The reusable Task remains available for future entries.
 
 ---
 
@@ -851,6 +1163,8 @@ occurredAt = redemption timestamp
 
 The Reward remains available unless the user archives or deletes it.
 
+Redemption does not require sufficient current balance. A SPEND transaction may make the ledger-derived balance negative.
+
 ---
 
 ## 23. Add Achievement Business Rule
@@ -874,6 +1188,8 @@ rewardId = null
 achievementId = Achievement.id
 occurredAt = Achievement.achievedAt
 ```
+
+Achievement edits correct the same historical event. A coinBonus change creates an additional immutable EARN or SPEND delta transaction rather than changing the original transaction. Deleting an Achievement archives it and creates an immutable SPEND reversal of its current contribution. Calendar presents the current active Achievement as one corrected event rather than exposing raw correction rows.
 
 ---
 
@@ -900,7 +1216,7 @@ Then attach the CoinTransaction to that DailyLog.
 Example:
 
 ```text
-Complete Task on 2026-08-17
+Stop TaskSession on 2026-08-17
         ↓
 Find DailyLog for 2026-08-17
         ↓
@@ -923,10 +1239,10 @@ Example:
 August 17
 
 Study ML
-coinReward = 20
+coinsPerHour = 20
 
-User completes it:
-+20
+User starts a frozen Daily Task Entry and later Stops:
+final payout = +20
 ```
 
 Later:
@@ -935,10 +1251,10 @@ Later:
 August 20
 
 Study ML
-coinReward changes to 30
+coinsPerHour changes to 30
 ```
 
-The August 17 transaction must remain:
+The August 17 Daily Task Entry, TaskSession snapshots, and transaction must remain:
 
 ```text
 +20
@@ -956,7 +1272,7 @@ Transaction amount therefore stores a snapshot of the amount at the time the eve
 
 ## 26. Archiving
 
-Task and Reward support archiving.
+Task, Reward, TaskCategory, and Achievement support archiving.
 
 ```text
 archivedAt = null
@@ -974,23 +1290,15 @@ Archived items should normally disappear from active lists but remain available 
 
 Archiving is preferred over deleting when possible.
 
-Achievement may also be archived if the UI needs to hide an entry without deleting historical information.
+The user-facing Achievement Delete action archives the event and preserves its immutable ledger history.
 
 ---
 
 ## 27. Hard Deletion
 
-If a user permanently deletes a Task or Reward, existing transaction history should survive.
+Current Task, Reward, Category, and Achievement removal flows use soft archive rather than hard deletion.
 
-For this reason:
-
-```text
-CoinTransaction.taskId
-CoinTransaction.rewardId
-CoinTransaction.achievementId
-```
-
-may become null if the source is deleted.
+If permanent deletion is introduced later, existing transaction and Daily Task Entry history must still survive. Hard deletion must not violate the exactly-one-source ledger invariant.
 
 However:
 
@@ -1008,14 +1316,18 @@ Historical data should remain readable.
 
 ## 28. Current SQLite Tables
 
-The SQLite database contains or is intended to contain:
+The SQLite database contains:
 
 ```text
+task_categories
 tasks
 rewards
 daily_logs
 achievements
 coin_transactions
+daily_task_plans
+task_sessions
+daily_goals
 ```
 
 ---
@@ -1027,14 +1339,53 @@ CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY NOT NULL,
   name TEXT NOT NULL,
   description TEXT NOT NULL,
+  category_id TEXT NOT NULL,
 
+  -- Retained physically for migration compatibility; not the active reward model.
   coin_reward INTEGER NOT NULL,
+  coins_per_hour INTEGER NOT NULL,
+  is_focused INTEGER NOT NULL,
   estimated_duration_minutes INTEGER,
 
   created_at TEXT NOT NULL,
-  archived_at TEXT
+  archived_at TEXT,
+
+  FOREIGN KEY (category_id)
+    REFERENCES task_categories(id)
 );
 ```
+
+The active TypeScript and product reward model uses `coins_per_hour` and `is_focused`. The legacy `coin_reward` column remains only to preserve safe migration compatibility.
+
+Related Task tables preserve occurrence and execution history:
+
+```text
+daily_task_plans
+  id (occurrence identity)
+  task_id
+  daily_log_id
+  category_id snapshot
+  planned_duration_minutes
+  planned_coin_amount
+  coins_per_hour_snapshot
+  is_focused_snapshot
+  suggested_raw_coin_amount
+  suggested_coin_amount
+  priority
+  created_at
+
+task_sessions
+  id
+  task_plan_id (unique)
+  started_at / active_started_at / accumulated_seconds / ended_at
+  extended_at
+  frozen Goal Duration and reward snapshots
+  coin_transaction_id
+  goal_notification_id
+  created_at
+```
+
+There is no same-Task/same-day uniqueness constraint on `daily_task_plans`. There is at most one TaskSession per Daily Task Entry and at most one globally open TaskSession.
 
 ---
 
@@ -1065,6 +1416,25 @@ CREATE TABLE IF NOT EXISTS daily_logs (
 
   mental_exhaustion INTEGER
 );
+```
+
+Each DailyLog may have one `daily_goals` row:
+
+```text
+daily_goals
+  id
+  daily_log_id (unique)
+  focus_goal_minutes
+  task_goal_count
+  typical_hourly_rate_snapshot (nullable while OPEN)
+  focus_bonus_amount_snapshot (nullable while OPEN)
+  task_bonus_amount_snapshot (nullable while OPEN)
+  combo_bonus_amount_snapshot (nullable while OPEN)
+  final_focus_seconds_snapshot (nullable while OPEN)
+  final_completed_task_count_snapshot (nullable while OPEN)
+  finished_at
+  created_at
+  updated_at
 ```
 
 ---
@@ -1104,9 +1474,19 @@ CREATE TABLE IF NOT EXISTS coin_transactions (
   task_id TEXT,
   reward_id TEXT,
   achievement_id TEXT,
+  daily_goal_id TEXT,
+  goal_bonus_kind TEXT,
 
   daily_log_id TEXT NOT NULL,
   occurred_at TEXT NOT NULL,
+
+  CHECK (
+    (task_id IS NOT NULL)
+    + (reward_id IS NOT NULL)
+    + (achievement_id IS NOT NULL)
+    + (daily_goal_id IS NOT NULL)
+    = 1
+  ),
 
   FOREIGN KEY (task_id)
     REFERENCES tasks(id)
@@ -1120,10 +1500,15 @@ CREATE TABLE IF NOT EXISTS coin_transactions (
     REFERENCES achievements(id)
     ON DELETE SET NULL,
 
+  FOREIGN KEY (daily_goal_id)
+    REFERENCES daily_goals(id),
+
   FOREIGN KEY (daily_log_id)
     REFERENCES daily_logs(id)
 );
 ```
+
+Daily Goal transactions additionally require an EARN type and a `goal_bonus_kind` of `FOCUS`, `TASK`, or `COMBO`. A unique partial index permits at most one row per `daily_goal_id + goal_bonus_kind`.
 
 ---
 
@@ -1149,6 +1534,10 @@ CREATE TABLE IF NOT EXISTS
 ```
 
 so initialization can safely run whenever the app starts.
+
+Current schema version is `9`.
+
+Version 9 replaced the tested-but-abandoned v8 DailyGoal first-session-locking shape with the final `finishedAt` settlement model. Old v8 goals migrate OPEN/editable, obsolete preview snapshots are cleared, and all immutable CoinTransactions are preserved. If an old threshold payout already exists, Finish Today treats that bonus kind as already paid and does not duplicate it.
 
 ---
 
@@ -1195,6 +1584,8 @@ SUM(amount WHERE type = SPEND)
 
 This makes CoinTransaction the source of truth for coin history.
 
+Negative balance is valid and Reward redemption is not pre-authorized from a UI balance value.
+
 A cached balance may be introduced later only if performance requires it.
 
 ---
@@ -1206,33 +1597,51 @@ A cached balance may be introduced later only if performance requires it.
 ```text
 Tasks
  ↓
-Add Task
+Open Task Library
  ↓
 Enter name
  ↓
 Optional description
  ↓
-Set coin reward
+Choose Category
  ↓
-Optional estimated duration
+Set Base Coins / Hour and Focused mode
  ↓
-Save
+Save reusable Task
 ```
 
-### Complete Task
+### Add and Run a Daily Task Entry
 
 ```text
-Select Task
+Select existing or newly created Task
  ↓
-Complete
+Choose Goal Duration, Priority, and Goal Reward
  ↓
-Optional actual duration
+Add to Today
  ↓
-Find/Create DailyLog
+Start Focus Session
  ↓
-Create EARN transaction
+Pause/Resume as needed
  ↓
-Balance increases
+Stop
+ ↓
+Create one actual-time EARN transaction
+```
+
+### Daily Goals
+
+```text
+Tasks / Today
+ ↓
+Set or edit Focus Time and Completed Tasks goals
+ ↓
+Track dynamic progress and pending bonus previews
+ ↓
+Stop any open Focus Session
+ ↓
+Finish Today
+ ↓
+Snapshot final results and settle qualifying bonuses exactly once
 ```
 
 ### Create Reward
@@ -1293,35 +1702,40 @@ Create EARN transaction
 
 ---
 
-## 38. Future Calendar / History
+## 38. Calendar / History
 
-Daily history should eventually be generated from:
+Calendar is implemented as user-facing activity history rather than a raw ledger dump.
 
-```text
-DailyLog
-+
-CoinTransaction
-```
+- Task completions use immutable CoinTransaction name and amount snapshots.
+- Reward redemptions use immutable CoinTransaction snapshots.
+- Active Achievements appear as one current corrected event on `achievedAt`; raw correction/reversal rows are hidden.
+- Settled Daily Goal bonus transactions appear as Daily Goal activity.
 
-Example:
+The current Calendar includes month navigation, direct month/year selection, Today navigation, activity markers, a selected-day activity modal, and a summary derived from the same presentation events.
 
-```text
-August 17
+### Planned Daily Insights
 
-Mental exhaustion: 7/10
+A future Calendar/Daily Detail phase may add:
 
-Earned: 130
-Spent: 30
+- Category focus breakdown with horizontal bars ordered by focused minutes descending
+- Focus Goal retrospective result
+- Completed Tasks Goal retrospective result
+- Celebratory or encouraging reached/not-reached feedback
+- Daily Goal bonus summary
 
-Activities:
+Category breakdown is visualization and insight, not a category-specific goal or reward system.
 
-+20  Study ML
-+10  Workout
--30  Bubble Tea
-+100 Job Offer
-```
+### Planned Completion Analytics
 
-The totals should normally be calculated from transaction data.
+Future analytics should preserve and distinguish Daily Task Entry outcomes:
+
+- Completed
+- Uncompleted
+- Deleted / Cancelled
+
+A planned entry that remains unfinished should be retained historically for later analytics. Potential analysis includes completion rate overall, by Task, and by Category; planned duration versus completion; priority versus completion; and goal difficulty versus completion.
+
+Explicitly deleted or cancelled entries must not count against the completion-rate denominator. This outcome model is a future design requirement and is not currently implemented.
 
 ---
 
@@ -1355,8 +1769,8 @@ Example:
 Task:
 Study ML
 
-Coin reward:
-20 coins
+Base rate:
+20 coins/hour
 
 Expected:
 60 min
@@ -1368,13 +1782,13 @@ Daily exhaustion on Task-heavy days:
 8/10
 ```
 
-The system may conclude that 20 coins undervalues the Task.
+The system may conclude that 20 coins/hour undervalues the Task.
 
 Potential recommendation:
 
 ```text
 Increase Study ML:
-20 → 30 coins
+20 -> 30 coins/hour
 ```
 
 The exact algorithm is intentionally deferred.
@@ -1409,73 +1823,58 @@ Completed:
 Expo project initialization
 iPhone Expo Go development environment
 TypeScript domain models
-SQLite schema design
-SQLite database initialization
+SQLite schema and versioned migrations through v9
+Task Library, Categories, and repeated Daily Task Entries
+Persistent Focus Sessions with Goal Reach, Extend, notifications, and actual-time payout
+Rewards with reusable redemption and negative balance support
+Achievements with immutable correction transactions
+Calendar activity history and navigation
+Daily Goals OPEN / Finish Today / FINISHED flow
 ```
 
 Current models:
 
 ```text
+TaskCategory
 Task
+DailyTaskPlan
+TaskSession
 Reward
 Achievement
 DailyLog
+DailyGoal
 CoinTransaction
 ```
 
 Current database tables:
 
 ```text
+task_categories
 tasks
 rewards
 achievements
 daily_logs
 coin_transactions
+daily_task_plans
+task_sessions
+daily_goals
 ```
 
 ---
 
 ## 42. Next Development Step
 
-The next implementation phase should be the database/service layer.
+The next approved product direction is a separate Calendar/Daily Insights phase.
 
-Recommended order:
+Planned work includes category Focus Time visualization and retrospective Daily Goal results. It must remain presentation/insight work rather than introducing Category goals or Category reward behavior.
 
-```text
-Task CRUD
-    ↓
-Reward CRUD
-    ↓
-DailyLog operations
-    ↓
-Transaction operations
-    ↓
-Achievement operations
-    ↓
-Business logic
-    ↓
-UI
-```
-
-First Task operations:
-
-```text
-createTask()
-getTaskById()
-getActiveTasks()
-updateTask()
-archiveTask()
-```
-
-After Task CRUD is validated against SQLite, implement equivalent Reward functionality.
-
-Do not redesign the UI before the core data flow works reliably.
+The future Daily Task Entry outcome model for completion-rate analytics also remains intentionally deferred.
 
 ---
 
 ## 43. First Functional Milestone
 
-The first end-to-end GoodieJar milestone should be:
+The first end-to-end GoodieJar economy milestone is complete:
 
 ```text
 Create Task
@@ -1484,7 +1883,7 @@ Save to SQLite
  ↓
 Display Task
  ↓
-Complete Task
+Add Daily Task Entry and Stop TaskSession
  ↓
 Find/Create DailyLog
  ↓
@@ -1513,7 +1912,7 @@ Create SPEND transaction
 Balance decreases
 ```
 
-Once both flows work, the core GoodieJar economy exists.
+These flows, along with Achievements, Calendar, Focus Sessions, and Daily Goals, now form the current local-first product baseline.
 
 ---
 

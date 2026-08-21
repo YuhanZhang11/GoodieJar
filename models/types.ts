@@ -78,7 +78,24 @@ export interface TaskSession {
   createdAt: string;
 }
 
+export interface DailyGoal {
+  id: string;
+  dailyLogId: string;
+  focusGoalMinutes: number;
+  taskGoalCount: number;
+  typicalHourlyRateSnapshot: number | null;
+  focusBonusAmountSnapshot: number | null;
+  taskBonusAmountSnapshot: number | null;
+  comboBonusAmountSnapshot: number | null;
+  finalFocusSecondsSnapshot: number | null;
+  finalCompletedTaskCountSnapshot: number | null;
+  finishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type TransactionType = 'EARN' | 'SPEND';
+export type GoalBonusKind = 'FOCUS' | 'TASK' | 'COMBO';
 
 export interface CoinTransaction {
   id: string;
@@ -90,10 +107,12 @@ export interface CoinTransaction {
   // Snapshot of the source name at the time the transaction occurred
   sourceName: string;
 
-  // Exactly one of these will normally be non-null
+  // Exactly one main source ID is non-null
   taskId: string | null;
   rewardId: string | null;
   achievementId: string | null;
+  dailyGoalId: string | null;
+  goalBonusKind: GoalBonusKind | null;
 
   dailyLogId: string;
 

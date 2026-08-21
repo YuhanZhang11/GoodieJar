@@ -68,8 +68,75 @@ export const createAchievementsTable = `
   );
 `;
 
-export const createCoinTransactionsTable = `
-  CREATE TABLE IF NOT EXISTS coin_transactions (
+function createDailyGoalsTableSql(
+  tableName: 'daily_goals' | 'daily_goals_v9_migration'
+): string {
+  return `
+  CREATE TABLE IF NOT EXISTS ${tableName} (
+    id TEXT PRIMARY KEY NOT NULL,
+    daily_log_id TEXT NOT NULL UNIQUE,
+    focus_goal_minutes INTEGER NOT NULL
+      CHECK (focus_goal_minutes >= 1 AND focus_goal_minutes <= 1439),
+    task_goal_count INTEGER NOT NULL
+      CHECK (task_goal_count >= 3),
+    typical_hourly_rate_snapshot REAL
+      CHECK (typical_hourly_rate_snapshot IS NULL OR typical_hourly_rate_snapshot > 0),
+    focus_bonus_amount_snapshot INTEGER
+      CHECK (focus_bonus_amount_snapshot IS NULL OR focus_bonus_amount_snapshot >= 0),
+    task_bonus_amount_snapshot INTEGER
+      CHECK (task_bonus_amount_snapshot IS NULL OR task_bonus_amount_snapshot >= 0),
+    combo_bonus_amount_snapshot INTEGER
+      CHECK (combo_bonus_amount_snapshot IS NULL OR combo_bonus_amount_snapshot >= 0),
+    final_focus_seconds_snapshot REAL
+      CHECK (final_focus_seconds_snapshot IS NULL OR final_focus_seconds_snapshot >= 0),
+    final_completed_task_count_snapshot INTEGER
+      CHECK (
+        final_completed_task_count_snapshot IS NULL
+        OR final_completed_task_count_snapshot >= 0
+      ),
+    finished_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+
+    CHECK (
+      (
+        finished_at IS NULL
+        AND typical_hourly_rate_snapshot IS NULL
+        AND focus_bonus_amount_snapshot IS NULL
+        AND task_bonus_amount_snapshot IS NULL
+        AND combo_bonus_amount_snapshot IS NULL
+        AND final_focus_seconds_snapshot IS NULL
+        AND final_completed_task_count_snapshot IS NULL
+      )
+      OR
+      (
+        finished_at IS NOT NULL
+        AND typical_hourly_rate_snapshot IS NOT NULL
+        AND focus_bonus_amount_snapshot IS NOT NULL
+        AND task_bonus_amount_snapshot IS NOT NULL
+        AND combo_bonus_amount_snapshot IS NOT NULL
+        AND final_focus_seconds_snapshot IS NOT NULL
+        AND final_completed_task_count_snapshot IS NOT NULL
+      )
+    ),
+
+    FOREIGN KEY (daily_log_id)
+      REFERENCES daily_logs(id)
+      ON DELETE CASCADE
+  );
+`;
+}
+
+export const createDailyGoalsTable = createDailyGoalsTableSql('daily_goals');
+
+export const createDailyGoalsV9MigrationTable =
+  createDailyGoalsTableSql('daily_goals_v9_migration');
+
+function createCoinTransactionsTableSql(
+  tableName: 'coin_transactions' | 'coin_transactions_v8_migration'
+): string {
+  return `
+  CREATE TABLE IF NOT EXISTS ${tableName} (
     id TEXT PRIMARY KEY NOT NULL,
 
     type TEXT NOT NULL
@@ -83,9 +150,27 @@ export const createCoinTransactionsTable = `
     task_id TEXT,
     reward_id TEXT,
     achievement_id TEXT,
+    daily_goal_id TEXT,
+    goal_bonus_kind TEXT
+      CHECK (goal_bonus_kind IS NULL OR goal_bonus_kind IN ('FOCUS', 'TASK', 'COMBO')),
 
     daily_log_id TEXT NOT NULL,
     occurred_at TEXT NOT NULL,
+
+    CHECK (
+      (task_id IS NOT NULL)
+      + (reward_id IS NOT NULL)
+      + (achievement_id IS NOT NULL)
+      + (daily_goal_id IS NOT NULL)
+      = 1
+    ),
+
+    CHECK (
+      (daily_goal_id IS NOT NULL AND goal_bonus_kind IN ('FOCUS', 'TASK', 'COMBO'))
+      OR (daily_goal_id IS NULL AND goal_bonus_kind IS NULL)
+    ),
+
+    CHECK (daily_goal_id IS NULL OR type = 'EARN'),
 
     FOREIGN KEY (task_id)
       REFERENCES tasks(id)
@@ -99,10 +184,20 @@ export const createCoinTransactionsTable = `
       REFERENCES achievements(id)
       ON DELETE SET NULL,
 
+    FOREIGN KEY (daily_goal_id)
+      REFERENCES daily_goals(id),
+
     FOREIGN KEY (daily_log_id)
       REFERENCES daily_logs(id)
   );
 `;
+}
+
+export const createCoinTransactionsTable =
+  createCoinTransactionsTableSql('coin_transactions');
+
+export const createCoinTransactionsV8MigrationTable =
+  createCoinTransactionsTableSql('coin_transactions_v8_migration');
 
 function createDailyTaskPlansTableSql(
   tableName: 'daily_task_plans' | 'daily_task_plans_v7_migration'
@@ -215,6 +310,10 @@ export const createAllIndexes = `
   CREATE UNIQUE INDEX IF NOT EXISTS task_sessions_single_open_unique
     ON task_sessions (1)
     WHERE ended_at IS NULL;
+
+  CREATE UNIQUE INDEX IF NOT EXISTS coin_transactions_daily_goal_bonus_unique
+    ON coin_transactions (daily_goal_id, goal_bonus_kind)
+    WHERE daily_goal_id IS NOT NULL;
 `;
 
 export const createTaskCategoryIntegrityTriggers = `
@@ -335,6 +434,7 @@ export const createAllTables = `
   ${createRewardsTable}
   ${createDailyLogsTable}
   ${createAchievementsTable}
+  ${createDailyGoalsTable}
   ${createCoinTransactionsTable}
   ${createDailyTaskPlansTable}
   ${createTaskSessionsTable}

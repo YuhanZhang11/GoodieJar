@@ -2,7 +2,7 @@ import { initDatabase } from '@/database/database';
 import { getLocalDateKey } from '@/utils/localDate';
 import { parseTimestamp } from '@/utils/timestamp';
 
-export type CalendarEventKind = 'TASK' | 'ACHIEVEMENT' | 'REWARD';
+export type CalendarEventKind = 'TASK' | 'DAILY_GOAL' | 'ACHIEVEMENT' | 'REWARD';
 
 export type CalendarEvent = {
   id: string;
@@ -21,6 +21,7 @@ type TransactionCalendarRow = {
   source_name: string;
   task_id: string | null;
   reward_id: string | null;
+  daily_goal_id: string | null;
   occurred_at: string;
   daily_log_date: string;
 };
@@ -35,8 +36,9 @@ type AchievementCalendarRow = {
 
 const KIND_ORDER: Record<CalendarEventKind, number> = {
   TASK: 0,
-  ACHIEVEMENT: 1,
-  REWARD: 2,
+  DAILY_GOAL: 1,
+  ACHIEVEMENT: 2,
+  REWARD: 3,
 };
 
 function validateMonth(year: number, monthIndex: number): void {
@@ -89,6 +91,7 @@ export async function getCalendarEventsForMonth(
          coin_transactions.source_name,
          coin_transactions.task_id,
          coin_transactions.reward_id,
+         coin_transactions.daily_goal_id,
          coin_transactions.occurred_at,
          daily_logs.date AS daily_log_date
        FROM coin_transactions
@@ -100,9 +103,11 @@ export async function getCalendarEventsForMonth(
            (coin_transactions.type = ? AND coin_transactions.task_id IS NOT NULL)
            OR
            (coin_transactions.type = ? AND coin_transactions.reward_id IS NOT NULL)
+           OR
+           (coin_transactions.type = ? AND coin_transactions.daily_goal_id IS NOT NULL)
          )
        ORDER BY daily_logs.date ASC, coin_transactions.occurred_at ASC, coin_transactions.id ASC`,
-      [startDate, endDate, 'EARN', 'SPEND']
+      [startDate, endDate, 'EARN', 'SPEND', 'EARN']
     );
 
     const achievementRows = await db.getAllAsync<AchievementCalendarRow>(
@@ -115,15 +120,24 @@ export async function getCalendarEventsForMonth(
       [monthStart.toISOString(), nextMonthStart.toISOString()]
     );
 
-    const transactionEvents: CalendarEvent[] = transactionRows.map((row) => ({
-      id: `transaction:${row.id}`,
-      kind: row.task_id !== null ? 'TASK' : 'REWARD',
-      date: row.daily_log_date,
-      name: row.source_name,
-      amount: row.amount,
-      description: null,
-      occurredAt: row.occurred_at,
-    }));
+    const transactionEvents: CalendarEvent[] = transactionRows.map((row) => {
+      const kind: CalendarEventKind =
+        row.task_id !== null
+          ? 'TASK'
+          : row.reward_id !== null
+            ? 'REWARD'
+            : 'DAILY_GOAL';
+
+      return {
+        id: `transaction:${row.id}`,
+        kind,
+        date: row.daily_log_date,
+        name: row.source_name,
+        amount: row.amount,
+        description: null,
+        occurredAt: row.occurred_at,
+      };
+    });
 
     const achievementEvents: CalendarEvent[] = achievementRows
       .map((row): CalendarEvent => {

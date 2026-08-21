@@ -4,6 +4,8 @@ import { DEFAULT_TASK_CATEGORIES, OTHER_TASK_CATEGORY_ID } from './defaultTaskCa
 import {
   createAllIndexes,
   createAllTables,
+  createCoinTransactionsV8MigrationTable,
+  createDailyGoalsV9MigrationTable,
   createDailyTaskPlanCoinIntegrityTriggers,
   createDailyTaskPlanCategoryIntegrityTriggers,
   createDailyTaskPlanRewardSnapshotIntegrityTriggers,
@@ -14,7 +16,7 @@ import {
   createTaskSessionsTable,
 } from './schema';
 
-const DATABASE_VERSION = 7;
+const DATABASE_VERSION = 9;
 
 type UserVersionRow = {
   user_version: number;
@@ -26,6 +28,10 @@ type TableColumnRow = {
 
 type CountRow = {
   count: number;
+};
+
+type BalanceRow = {
+  balance: number;
 };
 
 type TableDefinitionRow = {
@@ -68,12 +74,12 @@ async function migrateDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
     );
   }
 
-  const requiresPlanTableRebuild = currentVersion < 7;
+  const requiresReferencedTableRebuild = currentVersion < 9;
   let transactionOpen = false;
 
   // SQLite requires foreign-key enforcement to be disabled before the transaction
   // that replaces a referenced parent table. Integrity is checked before commit.
-  if (requiresPlanTableRebuild) {
+  if (requiresReferencedTableRebuild) {
     await db.execAsync('PRAGMA foreign_keys = OFF');
   }
 
@@ -465,6 +471,213 @@ async function migrateDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
       `);
     }
 
+    if (currentVersion < 8) {
+      const transactionColumns = await db.getAllAsync<TableColumnRow>(
+        'PRAGMA table_info(coin_transactions)'
+      );
+      const hasDailyGoalId = transactionColumns.some(
+        (column) => column.name === 'daily_goal_id'
+      );
+      const hasGoalBonusKind = transactionColumns.some(
+        (column) => column.name === 'goal_bonus_kind'
+      );
+
+      if (!hasDailyGoalId || !hasGoalBonusKind) {
+        const temporaryTable = await db.getFirstAsync<{ name: string }>(
+          `SELECT name
+           FROM sqlite_master
+           WHERE type = 'table' AND name = 'coin_transactions_v8_migration'`
+        );
+
+        if (temporaryTable) {
+          throw new Error('CoinTransaction v8 migration table already exists.');
+        }
+
+        const beforeCountRow = await db.getFirstAsync<CountRow>(
+          'SELECT COUNT(*) AS count FROM coin_transactions'
+        );
+        const beforeBalanceRow = await db.getFirstAsync<BalanceRow>(
+          `SELECT COALESCE(SUM(CASE WHEN type = 'EARN' THEN amount ELSE -amount END), 0)
+             AS balance
+           FROM coin_transactions`
+        );
+
+        await db.execAsync(createCoinTransactionsV8MigrationTable);
+        await db.execAsync(`
+          INSERT INTO coin_transactions_v8_migration (
+            id,
+            type,
+            amount,
+            actual_duration_minutes,
+            source_name,
+            task_id,
+            reward_id,
+            achievement_id,
+            daily_goal_id,
+            goal_bonus_kind,
+            daily_log_id,
+            occurred_at
+          )
+          SELECT
+            id,
+            type,
+            amount,
+            actual_duration_minutes,
+            source_name,
+            task_id,
+            reward_id,
+            achievement_id,
+            NULL,
+            NULL,
+            daily_log_id,
+            occurred_at
+          FROM coin_transactions
+        `);
+
+        const afterCountRow = await db.getFirstAsync<CountRow>(
+          'SELECT COUNT(*) AS count FROM coin_transactions_v8_migration'
+        );
+        const afterBalanceRow = await db.getFirstAsync<BalanceRow>(
+          `SELECT COALESCE(SUM(CASE WHEN type = 'EARN' THEN amount ELSE -amount END), 0)
+             AS balance
+           FROM coin_transactions_v8_migration`
+        );
+
+        if ((beforeCountRow?.count ?? 0) !== (afterCountRow?.count ?? 0)) {
+          throw new Error('CoinTransaction v8 migration did not preserve every transaction.');
+        }
+
+        if ((beforeBalanceRow?.balance ?? 0) !== (afterBalanceRow?.balance ?? 0)) {
+          throw new Error('CoinTransaction v8 migration changed the ledger balance.');
+        }
+
+        await db.execAsync('DROP TABLE coin_transactions');
+        await db.execAsync(
+          'ALTER TABLE coin_transactions_v8_migration RENAME TO coin_transactions'
+        );
+      }
+    }
+
+    if (currentVersion < 9) {
+      const dailyGoalColumns = await db.getAllAsync<TableColumnRow>(
+        'PRAGMA table_info(daily_goals)'
+      );
+      const hasLockedAt = dailyGoalColumns.some((column) => column.name === 'locked_at');
+      const hasFinishedAt = dailyGoalColumns.some((column) => column.name === 'finished_at');
+      const hasFinalFocusSeconds = dailyGoalColumns.some(
+        (column) => column.name === 'final_focus_seconds_snapshot'
+      );
+      const hasFinalCompletedTaskCount = dailyGoalColumns.some(
+        (column) => column.name === 'final_completed_task_count_snapshot'
+      );
+      const requiresDailyGoalV9Rebuild =
+        hasLockedAt ||
+        !hasFinishedAt ||
+        !hasFinalFocusSeconds ||
+        !hasFinalCompletedTaskCount;
+
+      if (requiresDailyGoalV9Rebuild) {
+        const temporaryTable = await db.getFirstAsync<{ name: string }>(
+          `SELECT name
+           FROM sqlite_master
+           WHERE type = 'table' AND name = 'daily_goals_v9_migration'`
+        );
+
+        if (temporaryTable) {
+          throw new Error('DailyGoal v9 migration table already exists.');
+        }
+
+        const beforeCountRow = await db.getFirstAsync<CountRow>(
+          'SELECT COUNT(*) AS count FROM daily_goals'
+        );
+        const beforeTransactionCountRow = await db.getFirstAsync<CountRow>(
+          'SELECT COUNT(*) AS count FROM coin_transactions'
+        );
+        const beforeBalanceRow = await db.getFirstAsync<BalanceRow>(
+          `SELECT COALESCE(SUM(CASE WHEN type = 'EARN' THEN amount ELSE -amount END), 0)
+             AS balance
+           FROM coin_transactions`
+        );
+
+        await db.execAsync(createDailyGoalsV9MigrationTable);
+        await db.execAsync(`
+          INSERT INTO daily_goals_v9_migration (
+            id,
+            daily_log_id,
+            focus_goal_minutes,
+            task_goal_count,
+            typical_hourly_rate_snapshot,
+            focus_bonus_amount_snapshot,
+            task_bonus_amount_snapshot,
+            combo_bonus_amount_snapshot,
+            final_focus_seconds_snapshot,
+            final_completed_task_count_snapshot,
+            finished_at,
+            created_at,
+            updated_at
+          )
+          SELECT
+            id,
+            daily_log_id,
+            focus_goal_minutes,
+            task_goal_count,
+            NULL,
+            NULL,
+            NULL,
+            NULL,
+            NULL,
+            NULL,
+            NULL,
+            created_at,
+            updated_at
+          FROM daily_goals
+        `);
+
+        const afterCountRow = await db.getFirstAsync<CountRow>(
+          'SELECT COUNT(*) AS count FROM daily_goals_v9_migration'
+        );
+        const missingGoalIdRow = await db.getFirstAsync<CountRow>(
+          `SELECT COUNT(*) AS count
+           FROM daily_goals AS old_goal
+           LEFT JOIN daily_goals_v9_migration AS new_goal ON new_goal.id = old_goal.id
+           WHERE new_goal.id IS NULL`
+        );
+
+        if ((beforeCountRow?.count ?? 0) !== (afterCountRow?.count ?? 0)) {
+          throw new Error('DailyGoal v9 migration did not preserve every goal.');
+        }
+
+        if ((missingGoalIdRow?.count ?? 0) !== 0) {
+          throw new Error('DailyGoal v9 migration did not preserve every goal ID.');
+        }
+
+        await db.execAsync('DROP TABLE daily_goals');
+        await db.execAsync(
+          'ALTER TABLE daily_goals_v9_migration RENAME TO daily_goals'
+        );
+
+        const afterTransactionCountRow = await db.getFirstAsync<CountRow>(
+          'SELECT COUNT(*) AS count FROM coin_transactions'
+        );
+        const afterBalanceRow = await db.getFirstAsync<BalanceRow>(
+          `SELECT COALESCE(SUM(CASE WHEN type = 'EARN' THEN amount ELSE -amount END), 0)
+             AS balance
+           FROM coin_transactions`
+        );
+
+        if (
+          (beforeTransactionCountRow?.count ?? 0) !==
+          (afterTransactionCountRow?.count ?? 0)
+        ) {
+          throw new Error('DailyGoal v9 migration changed CoinTransaction history.');
+        }
+
+        if ((beforeBalanceRow?.balance ?? 0) !== (afterBalanceRow?.balance ?? 0)) {
+          throw new Error('DailyGoal v9 migration changed the ledger balance.');
+        }
+      }
+    }
+
     await db.execAsync(createAllIndexes);
     await db.execAsync(createTaskCategoryIntegrityTriggers);
     await db.execAsync(createTaskCoinRateIntegrityTriggers);
@@ -497,7 +710,7 @@ async function migrateDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
 
     throw error;
   } finally {
-    if (requiresPlanTableRebuild) {
+    if (requiresReferencedTableRebuild) {
       await db.execAsync('PRAGMA foreign_keys = ON');
     }
   }

@@ -1,8 +1,11 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { DailyGoalCard } from '@/components/daily-goal-card';
+import { DailyGoalFormModal, type DailyGoalFormInput } from '@/components/daily-goal-form-modal';
+import { FinishDailyGoalModal } from '@/components/finish-daily-goal-modal';
 import { JarPage } from '@/components/jar-page';
 import { TaskFocusSessionModal } from '@/components/task-focus-session-modal';
 import { TaskFormModal, type TaskTemplateFormInput } from '@/components/task-form-modal';
@@ -12,6 +15,13 @@ import { TodayTaskListItem } from '@/components/today-task-list-item';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { Task, TaskCategory } from '@/models/types';
+import {
+  createDailyGoal,
+  finishDailyGoal,
+  getDailyGoalProgress,
+  updateDailyGoal,
+  type DailyGoalProgress,
+} from '@/services/dailyGoalService';
 import {
   archiveTaskCategory,
   createTaskCategory,
@@ -65,6 +75,12 @@ export default function TasksScreen() {
   const [isSessionMutating, setIsSessionMutating] = useState(false);
   const [removingPlanId, setRemovingPlanId] = useState<string | null>(null);
   const [archivingTaskId, setArchivingTaskId] = useState<string | null>(null);
+  const [dailyGoalProgress, setDailyGoalProgress] = useState<DailyGoalProgress | null>(null);
+  const [dailyGoalModalVisible, setDailyGoalModalVisible] = useState(false);
+  const [finishDailyGoalModalVisible, setFinishDailyGoalModalVisible] = useState(false);
+  const [finishDailyGoalError, setFinishDailyGoalError] = useState<string | null>(null);
+  const [isDailyGoalMutating, setIsDailyGoalMutating] = useState(false);
+  const [dailyGoalNowMs, setDailyGoalNowMs] = useState(Date.now());
   const [balanceRefreshToken, setBalanceRefreshToken] = useState(0);
   const todayLoadRequestIdRef = useRef(0);
   const libraryLoadRequestIdRef = useRef(0);
@@ -72,8 +88,29 @@ export default function TasksScreen() {
   const sessionMutationRef = useRef(false);
   const removingPlanIdRef = useRef<string | null>(null);
   const archivingTaskIdRef = useRef<string | null>(null);
+  const dailyGoalMutationRef = useRef(false);
   const taskFormExitRef = useRef<TaskFormExit>({ destination: 'library' });
   const sheetTransitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openSessionContributesToDailyGoal = Boolean(
+    dailyGoalProgress?.goal &&
+      dailyGoalProgress.goal.finishedAt === null &&
+      openSession?.session.activeStartedAt &&
+      openSession.planDetails.plan.dailyLogId === dailyGoalProgress.goal.dailyLogId
+  );
+  const liveDailyFocusSeconds = dailyGoalProgress
+    ? dailyGoalProgress.totalActiveSeconds +
+      (openSessionContributesToDailyGoal
+        ? Math.max(
+            0,
+            (dailyGoalNowMs -
+              Math.max(
+                new Date(dailyGoalProgress.calculatedAt).getTime(),
+                new Date(openSession?.session.activeStartedAt ?? 0).getTime()
+              )) /
+              1000
+          )
+        : 0)
+    : 0;
 
   const loadToday = useCallback(async (showLoading = true) => {
     const requestId = ++todayLoadRequestIdRef.current;
@@ -84,10 +121,11 @@ export default function TasksScreen() {
 
     try {
       const today = getLocalDateKey(new Date());
-      const [todayPlans, completedPlanIds, persistedOpenSession] = await Promise.all([
+      const [todayPlans, completedPlanIds, persistedOpenSession, dailyGoalProgressResult] = await Promise.all([
         getTaskPlansByDate(today),
         getCompletedTaskPlanIdsByDate(today),
         getOpenTaskSession(),
+        getDailyGoalProgress(today),
       ]);
 
       if (requestId !== todayLoadRequestIdRef.current) {
@@ -106,6 +144,8 @@ export default function TasksScreen() {
       }
 
       setOpenSession(persistedOpenSession);
+      setDailyGoalProgress(dailyGoalProgressResult);
+      setDailyGoalNowMs(Date.now());
       setPlans(visiblePlans);
       setLoadState('loaded');
     } catch {
@@ -114,6 +154,18 @@ export default function TasksScreen() {
       }
     }
   }, []);
+
+  const refreshDailyGoals = useCallback((): Promise<void> => {
+    return (async () => {
+      const progress = await getDailyGoalProgress(getLocalDateKey(new Date()));
+      setDailyGoalProgress(progress);
+      setDailyGoalNowMs(Date.now());
+    })();
+  }, []);
+
+  const refreshSessionDailyGoals = useCallback(async (): Promise<void> => {
+    await refreshDailyGoals();
+  }, [refreshDailyGoals]);
 
   const loadLibrary = useCallback(async () => {
     const requestId = ++libraryLoadRequestIdRef.current;
@@ -148,6 +200,26 @@ export default function TasksScreen() {
       };
     }, [loadToday])
   );
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        void loadToday(false);
+      }
+    });
+
+    return () => subscription.remove();
+  }, [loadToday]);
+
+  useEffect(() => {
+    if (!openSessionContributesToDailyGoal) {
+      return;
+    }
+
+    setDailyGoalNowMs(Date.now());
+    const interval = setInterval(() => setDailyGoalNowMs(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [openSessionContributesToDailyGoal]);
 
   useEffect(() => {
     return () => {
@@ -223,6 +295,7 @@ export default function TasksScreen() {
       ...currentTasks.filter((task) => task.id !== createdTask.id),
     ]);
     taskFormExitRef.current = { destination: 'plan', task: createdTask };
+    void loadToday(false);
   }
 
   async function createCategory(name: string): Promise<TaskCategory> {
@@ -277,6 +350,78 @@ export default function TasksScreen() {
     await loadToday(false);
   }
 
+  async function saveDailyGoals(input: DailyGoalFormInput) {
+    if (!dailyGoalProgress || dailyGoalMutationRef.current) {
+      return;
+    }
+
+    dailyGoalMutationRef.current = true;
+    setIsDailyGoalMutating(true);
+
+    try {
+      const date = getLocalDateKey(new Date());
+
+      if (dailyGoalProgress.goal) {
+        await updateDailyGoal({ date, ...input });
+      } else {
+        await createDailyGoal({ date, ...input });
+      }
+
+      await refreshDailyGoals();
+    } finally {
+      dailyGoalMutationRef.current = false;
+      setIsDailyGoalMutating(false);
+    }
+  }
+
+  function openFinishDailyGoal() {
+    const goal = dailyGoalProgress?.goal;
+
+    if (!goal || goal.finishedAt !== null) {
+      return;
+    }
+
+    if (
+      openSession &&
+      openSession.planDetails.plan.dailyLogId === goal.dailyLogId
+    ) {
+      Alert.alert(
+        'Focus session still open',
+        'Stop your current focus session before finishing today.'
+      );
+      return;
+    }
+
+    setFinishDailyGoalError(null);
+    setFinishDailyGoalModalVisible(true);
+  }
+
+  async function confirmFinishDailyGoal() {
+    if (dailyGoalMutationRef.current) {
+      return;
+    }
+
+    dailyGoalMutationRef.current = true;
+    setIsDailyGoalMutating(true);
+    setFinishDailyGoalError(null);
+
+    try {
+      const result = await finishDailyGoal(getLocalDateKey(new Date()));
+      setDailyGoalProgress(result.progress);
+      setDailyGoalNowMs(Date.now());
+      setFinishDailyGoalModalVisible(false);
+
+      if (result.createdTransactions.length > 0) {
+        setBalanceRefreshToken((currentToken) => currentToken + 1);
+      }
+    } catch (error) {
+      setFinishDailyGoalError(getErrorMessage(error));
+    } finally {
+      dailyGoalMutationRef.current = false;
+      setIsDailyGoalMutating(false);
+    }
+  }
+
   async function startSelectedPlan(details: TaskPlanDetails) {
     if (
       startingPlanIdRef.current !== null ||
@@ -294,6 +439,9 @@ export default function TasksScreen() {
       todayLoadRequestIdRef.current += 1;
       setOpenSession(sessionDetails);
       setFocusModalVisible(true);
+      void refreshSessionDailyGoals().catch((error) => {
+        console.warn('Daily Goal refresh after Start failed:', error);
+      });
     } catch (error) {
       Alert.alert('Could not start focus', getErrorMessage(error));
       void loadToday(false);
@@ -326,6 +474,9 @@ export default function TasksScreen() {
       const sessionDetails = await mutation(openSession.session.id);
       todayLoadRequestIdRef.current += 1;
       setOpenSession(sessionDetails);
+      void refreshSessionDailyGoals().catch((error) => {
+        console.warn('Daily Goal refresh after session change failed:', error);
+      });
     } catch (error) {
       Alert.alert(errorTitle, getErrorMessage(error));
     } finally {
@@ -345,6 +496,11 @@ export default function TasksScreen() {
 
     try {
       await stopTaskSession(openSession.session.id);
+      try {
+        await refreshSessionDailyGoals();
+      } catch (error) {
+        console.warn('Daily Goal refresh after Stop failed:', error);
+      }
       setFocusModalVisible(false);
       setOpenSession(null);
       setPlans((currentPlans) =>
@@ -429,6 +585,7 @@ export default function TasksScreen() {
       setLibraryTasks((currentTasks) =>
         currentTasks.filter((currentTask) => currentTask.id !== task.id)
       );
+      void loadToday(false);
     } catch (error) {
       Alert.alert('Could not delete task', getErrorMessage(error));
     } finally {
@@ -521,23 +678,35 @@ export default function TasksScreen() {
         keyExtractor={({ plan }) => plan.id}
         ListEmptyComponent={renderEmptyState}
         ListHeaderComponent={
-          <View style={[styles.sectionHeader, { backgroundColor: colors.surfaceMuted }]}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Today</Text>
-            <Pressable
-              accessibilityLabel="Open Task Library"
-              accessibilityRole="button"
-              disabled={planMutationInProgress}
-              onPress={openTaskLibrary}
-              style={({ pressed }) => [
-                styles.addButton,
-                {
-                  backgroundColor: colors.surface,
-                  opacity: pressed || planMutationInProgress ? 0.62 : 1,
-                },
-              ]}>
-              <MaterialIcons name="add" size={19} color={colors.primary} />
-              <Text style={[styles.addButtonText, { color: colors.primary }]}>New Task</Text>
-            </Pressable>
+          <View>
+            {dailyGoalProgress ? (
+              <DailyGoalCard
+                disabled={planMutationInProgress || isDailyGoalMutating}
+                onEditGoals={() => setDailyGoalModalVisible(true)}
+                onFinishToday={openFinishDailyGoal}
+                onSetGoals={() => setDailyGoalModalVisible(true)}
+                progress={dailyGoalProgress}
+                totalActiveSeconds={liveDailyFocusSeconds}
+              />
+            ) : null}
+            <View style={[styles.sectionHeader, { backgroundColor: colors.surfaceMuted }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Today</Text>
+              <Pressable
+                accessibilityLabel="Open Task Library"
+                accessibilityRole="button"
+                disabled={planMutationInProgress}
+                onPress={openTaskLibrary}
+                style={({ pressed }) => [
+                  styles.addButton,
+                  {
+                    backgroundColor: colors.surface,
+                    opacity: pressed || planMutationInProgress ? 0.62 : 1,
+                  },
+                ]}>
+                <MaterialIcons name="add" size={19} color={colors.primary} />
+                <Text style={[styles.addButtonText, { color: colors.primary }]}>New Task</Text>
+              </Pressable>
+            </View>
           </View>
         }
         renderItem={({ item }) => (
@@ -599,6 +768,33 @@ export default function TasksScreen() {
         onSubmit={addSelectedTaskToToday}
         task={selectedTask}
         visible={selectedTask !== null}
+      />
+
+      <DailyGoalFormModal
+        initialGoal={dailyGoalProgress?.goal ?? null}
+        onRequestClose={() => {
+          if (!dailyGoalMutationRef.current) {
+            setDailyGoalModalVisible(false);
+          }
+        }}
+        onSubmit={saveDailyGoals}
+        typicalHourlyRate={dailyGoalProgress?.typicalHourlyRate ?? null}
+        visible={dailyGoalModalVisible}
+      />
+
+      <FinishDailyGoalModal
+        errorMessage={finishDailyGoalError}
+        isSubmitting={isDailyGoalMutating}
+        onConfirm={() => void confirmFinishDailyGoal()}
+        onRequestClose={() => {
+          if (!dailyGoalMutationRef.current) {
+            setFinishDailyGoalModalVisible(false);
+            setFinishDailyGoalError(null);
+          }
+        }}
+        progress={dailyGoalProgress}
+        totalActiveSeconds={liveDailyFocusSeconds}
+        visible={finishDailyGoalModalVisible}
       />
 
       <TaskFocusSessionModal

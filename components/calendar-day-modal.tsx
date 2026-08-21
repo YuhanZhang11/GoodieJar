@@ -18,6 +18,7 @@ const EVENT_PRESENTATION: Record<
   { icon: keyof typeof MaterialIcons.glyphMap; label: string }
 > = {
   TASK: { icon: 'check-circle', label: 'Task' },
+  DAILY_GOAL: { icon: 'flag', label: 'Daily Goal' },
   ACHIEVEMENT: { icon: 'emoji-events', label: 'Achievement' },
   REWARD: { icon: 'redeem', label: 'Reward' },
 };

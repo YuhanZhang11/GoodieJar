@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { initDatabase } from '@/database/database';
-import type { CoinTransaction, TransactionType } from '@/models/types';
+import type { CoinTransaction, GoalBonusKind, TransactionType } from '@/models/types';
 import { getDailyLogByDate } from '@/services/dailyLogService';
 import { parseTimestamp } from '@/utils/timestamp';
 
@@ -14,6 +14,8 @@ type CoinTransactionRow = {
   task_id: string | null;
   reward_id: string | null;
   achievement_id: string | null;
+  daily_goal_id: string | null;
+  goal_bonus_kind: GoalBonusKind | null;
   daily_log_id: string;
   occurred_at: string;
 };
@@ -30,6 +32,8 @@ export type CreateTransactionInput = {
   taskId?: string | null;
   rewardId?: string | null;
   achievementId?: string | null;
+  dailyGoalId?: string | null;
+  goalBonusKind?: GoalBonusKind | null;
   dailyLogId: string;
   occurredAt: string;
 };
@@ -44,6 +48,8 @@ function mapCoinTransactionRow(row: CoinTransactionRow): CoinTransaction {
     taskId: row.task_id,
     rewardId: row.reward_id,
     achievementId: row.achievement_id,
+    dailyGoalId: row.daily_goal_id,
+    goalBonusKind: row.goal_bonus_kind,
     dailyLogId: row.daily_log_id,
     occurredAt: row.occurred_at,
   };
@@ -118,6 +124,7 @@ function validateSources(input: CreateTransactionInput) {
     taskId: normalizeSourceId(input.taskId, 'taskId'),
     rewardId: normalizeSourceId(input.rewardId, 'rewardId'),
     achievementId: normalizeSourceId(input.achievementId, 'achievementId'),
+    dailyGoalId: normalizeSourceId(input.dailyGoalId, 'dailyGoalId'),
   };
   const sourceCount = Object.values(sources).filter((sourceId) => sourceId !== null).length;
 
@@ -125,7 +132,25 @@ function validateSources(input: CreateTransactionInput) {
     throw new Error('Transaction must have exactly one source ID.');
   }
 
-  return sources;
+  const goalBonusKind = input.goalBonusKind ?? null;
+
+  if (sources.dailyGoalId !== null) {
+    if (input.type !== 'EARN') {
+      throw new Error('Daily Goal transactions must use type EARN.');
+    }
+
+    if (
+      goalBonusKind !== 'FOCUS' &&
+      goalBonusKind !== 'TASK' &&
+      goalBonusKind !== 'COMBO'
+    ) {
+      throw new Error('Daily Goal transactions must have a valid goalBonusKind.');
+    }
+  } else if (goalBonusKind !== null) {
+    throw new Error('Only Daily Goal transactions may have a goalBonusKind.');
+  }
+
+  return { ...sources, goalBonusKind };
 }
 
 async function getDatabase(): Promise<SQLiteDatabase> {
@@ -147,6 +172,8 @@ export async function createTransaction(
     taskId: sources.taskId,
     rewardId: sources.rewardId,
     achievementId: sources.achievementId,
+    dailyGoalId: sources.dailyGoalId,
+    goalBonusKind: sources.goalBonusKind,
     dailyLogId: validateNonBlank(input.dailyLogId, 'dailyLogId'),
     occurredAt: parseTimestamp(input.occurredAt, 'Transaction occurredAt').timestamp,
   };
@@ -161,9 +188,11 @@ export async function createTransaction(
       task_id,
       reward_id,
       achievement_id,
+      daily_goal_id,
+      goal_bonus_kind,
       daily_log_id,
       occurred_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       transaction.id,
       transaction.type,
@@ -173,6 +202,8 @@ export async function createTransaction(
       transaction.taskId,
       transaction.rewardId,
       transaction.achievementId,
+      transaction.dailyGoalId,
+      transaction.goalBonusKind,
       transaction.dailyLogId,
       transaction.occurredAt,
     ]
